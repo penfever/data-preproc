@@ -8,9 +8,10 @@ Data-Preproc is a lightweight, standalone utility for ingesting, cleaning and tr
 - **Prompt Strategies**: Multiple prompt formatting strategies (Alpaca, ChatML, completion, vision-language, etc.)
 - **Tokenization**: Efficient tokenization with various strategies
 - **Multimodal Support**: Vision-language preprocessing for images, videos, and audio
-- **Dataset Processors**: Modular processing pipeline including deduplication, filtering, and transformations
+- **Dataset Processors**: Modular processing pipeline including deduplication, filtering, toxicity detection, and transformations
 - **Configuration**: YAML-based configuration system
 - **CLI Interface**: Simple command-line interface for preprocessing
+- **HuggingFace Integration**: Direct upload to HuggingFace Hub
 
 ## Installation
 
@@ -20,6 +21,15 @@ pip install -e .
 
 # With vision-language support
 pip install -e ".[vision]"
+
+# With development dependencies
+pip install -e ".[dev]"
+
+# With toxicity filtering support
+pip install -e ".[toxicity]"
+
+# Install all optional dependencies
+pip install -e ".[vision,toxicity,dev]"
 ```
 
 ## Quick Start
@@ -41,16 +51,7 @@ pip install -e ".[vision]"
 3. **Try a basic example:**
    ```bash
    # Use example configuration
-   data-preproc --config configs/example_config.yaml
-   ```
-
-4. **Explore demonstrations:**
-   ```bash
-   # VL preprocessing demo
-   python demos/demo_vl_preprocessing.py
-   
-   # Configuration demo
-   python demos/demo_vl_yaml_config.py
+   data-preproc --config configs/example/example_config.yaml
    ```
 
 ## Usage
@@ -59,10 +60,10 @@ pip install -e ".[vision]"
 
 ```bash
 # Basic preprocessing
-data-preproc --config configs/example_config.yaml
+data-preproc --config configs/example/example_config.yaml
 
 # Vision-language preprocessing
-data-preproc --config configs/example_config_vl.yaml
+data-preproc --config configs/example/example_vl_config.yaml
 
 # With custom output path
 data-preproc --config config.yaml --dataset_prepared_path ./preprocessed_data
@@ -101,15 +102,15 @@ datasets:
     type: "alpaca"
     subset: "gpqa_diamond"  # Load specific subset
     
-  # Example with multiple subsets
+  # Example with multiple subsets (concatenated)
   - path: "facebook/multilingual_librispeech"
     type: "alpaca"
-    subset: ["spanish", "french", "german"]  # Load multiple subsets
+    subset: ["spanish", "french", "german"]  # Load and concatenate multiple subsets
     
-  # Example with all subsets
+  # Example with all subsets (auto-discovered)
   - path: "facebook/multilingual_librispeech"
     type: "alpaca"
-    subset: "_ALL"  # Load all available subsets
+    subset: "_ALL"  # Automatically discover and load all available subsets
     
 # Training configuration
 train_on_inputs: false
@@ -339,13 +340,21 @@ The data-preproc package includes a modular processor system for dataset transfo
 
 #### Available Processors
 
+- **`passthrough`**: No-op testing processor (useful for debugging)
+- **`filter`**: Basic text length and field filtering
 - **`hf_filter`**: Filter datasets by token length, image constraints, and data quality
-- **`deduplicator`**: Remove duplicate or similar samples using various similarity methods
+- **`column_mapping`**: Simple column renaming
 - **`advanced_mapping`**: Transform and map dataset fields with complex transformations
-- **`image_transform`**: Apply image transformations (resize, crop, normalize)
-- **`regex_filter`**: Filter content using regular expressions
-- **`qa_to_messages`**: Convert Q&A format to conversation format
 - **`multimodal_filter`**: Filter multimodal content (images, videos, audio)
+- **`image_count_filter`**: Filter by number of images in each example
+- **`qa_to_messages`**: Convert Q&A format to conversation format
+- **`deduplicator`**: Remove duplicate or similar samples using various similarity methods
+- **`regex_filter`**: Filter content using regular expressions
+- **`regex_transform`**: Apply regex transformations to text fields
+- **`image_transform`**: Apply image transformations (resize, crop, normalize)
+- **`text_toxicity_filter`**: Filter text content for toxicity using Detoxify
+- **`image_toxicity_filter`**: Filter images for inappropriate content using CLIP
+- **`pipeline`**: Compose multiple processors into reusable sequences
 
 #### Deduplication
 
@@ -362,6 +371,11 @@ processors:
       - path: "HuggingFaceH4/MATH-500"
         split: "test"
         column: "problem"
+        subset: "main"          # Optional: specific subset
+      - path: "facebook/multilingual_librispeech"
+        split: "test"
+        column: "text"
+        subset: ["spanish", "french"]  # Optional: multiple subsets
 ```
 
 **Deduplication Methods:**
@@ -478,10 +492,10 @@ hf_upload:
 
 ```bash
 # Basic preprocessing with HF upload
-data-preproc --config example_config_vl.yaml
+data-preproc --config configs/example/example_vl_config.yaml
 
 # Preprocessing with custom HF token
-data-preproc --config example_config_vl.yaml --hf_token hf_your_token
+data-preproc --config configs/example/example_vl_config.yaml --hf_token hf_your_token
 
 # Override HF settings via CLI
 data-preproc --config config.yaml \
@@ -509,22 +523,26 @@ When uploading to HuggingFace Hub, the system automatically creates:
 
 ```
 data-preproc/
-├── configs/          # Example configuration files
-├── demos/            # Comprehensive demonstration scripts  
-├── examples/         # Example scripts and sample data
-├── tests/            # Test suite
-├── data_preproc/     # Main package
-│   ├── cli/          # Command-line interface
-│   ├── core/         # Core dataset loading functionality
-│   ├── loaders/      # Tokenizer and processor loading
+├── configs/              # Example configuration files
+│   ├── example/          # Basic example configs
+│   └── test/             # Test configurations
+├── data_preproc/         # Main package
+│   ├── cli/              # Command-line interface
+│   ├── core/             # Core dataset loading functionality
+│   ├── loaders/          # Tokenizer and processor loading
+│   ├── processors/       # Dataset processors
 │   ├── prompt_strategies/ # Prompt formatting strategies
-│   ├── utils/        # Utility modules (dict, logging, hf_upload, etc.)
-│   ├── mm_plugin.py  # Multimodal plugin system
-│   ├── prompters.py  # Prompt template definitions
+│   ├── utils/            # Utility modules (dict, logging, hf_upload, etc.)
+│   ├── mm_plugin.py      # Multimodal plugin system
+│   ├── prompters.py      # Prompt template definitions
 │   └── prompt_tokenizers.py # Tokenization strategies
-├── run_tests.py      # Test runner
-├── README.md         # Main documentation
-└── .gitignore        # Git ignore rules
+├── tests/                # Test suite
+├── run_tests.py          # Test runner
+├── setup.py              # Package setup
+├── pyproject.toml        # Project configuration
+├── README.md             # Main documentation
+├── PROCESSORS.md         # Detailed processor documentation
+└── CLAUDE.md             # Development notes and instructions
 ```
 
 ## License
