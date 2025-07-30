@@ -1,0 +1,38 @@
+# Example configuration demonstrating the image_count_filter processor
+# This filters samples to only include those with 3-5 images
+
+model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+tokenizer_use_fast: true
+image_size: 224
+
+datasets:
+  - path: "dataset-with-multiple-images"
+    type: vision_language
+    conversation_field: "messages"
+    
+    processors:
+      # First filter by image count
+      - type: image_count_filter
+        min_images: 3     # Filter out samples with less than 3 images
+        max_images: 5     # Filter out samples with more than 5 images
+        
+      # Then filter out corrupted images
+      - type: multimodal_filter
+        filter_corrupted_images: true
+        max_image_size: [2048, 2048]
+        
+      # Finally apply text length filtering
+      - type: filter
+        min_length: 100
+        max_length: 8000
+
+# Preprocessing options
+preprocessing:
+  chunk: false
+  pack: false
+  max_seq_len: 8192
+  drop_system_message: false
+
+output:
+  path: "./processed_data"
+  push_to_hub: false

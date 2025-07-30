@@ -1,0 +1,68 @@
+# Example configuration for text-only toxicity filtering
+# This demonstrates text toxicity filtering without image processing
+
+base_model: microsoft/DialoGPT-medium
+tokenizer_config: microsoft/DialoGPT-medium
+
+sequence_len: 2048
+dataset_prepared_path: ./data/text_toxicity_filtered
+
+datasets:
+  - path: Anthropic/hh-rlhf
+    type: alpaca
+    split: train[:5000]  # Process first 5000 samples
+    
+    # Dataset processors (applied in order)
+    processors:
+      # 1. Filter text content for toxicity with strict settings
+      - type: text_toxicity_filter
+        model_type: "original"  # Use original Detoxify model
+        
+        # Text fields to check
+        text_fields: ["chosen", "rejected", "prompt", "text", "content"]
+        
+        # Strict toxicity thresholds for safety-critical applications
+        toxicity_threshold: 0.5          # Lower threshold = more strict
+        severe_toxicity_threshold: 0.3   # Very strict for severe toxicity
+        obscene_threshold: 0.6           # Strict for obscene content
+        threat_threshold: 0.3            # Very strict for threats
+        insult_threshold: 0.6            # Strict for insults
+        identity_attack_threshold: 0.3   # Very strict for identity attacks
+        
+        # Check all toxicity types
+        check_types: [
+          "toxicity", 
+          "severe_toxicity", 
+          "obscene", 
+          "threat", 
+          "insult", 
+          "identity_attack"
+        ]
+        
+        # Filter if ANY type exceeds threshold
+        filter_mode: "any"
+        
+        # Enable logging for monitoring
+        log_filtered: true
+      
+      # 2. Apply length filtering after toxicity filtering
+      - type: hf_filter
+        min_tokens: 10
+        max_tokens: 1000
+        text_fields: ["chosen", "rejected", "prompt", "text", "content"]
+
+train_on_inputs: false
+val_set_size: 0.1
+batch_size: 16
+debug: false
+
+# HF upload configuration
+hf_upload:
+  enabled: true
+  organization: "your-org"
+  dataset_name: "hh-rlhf-toxicity-filtered"
+  private: false
+  description: "Anthropic HH-RLHF dataset with toxicity filtering applied"
+  license: "mit"
+  tags: ["text", "toxicity-filtered", "safe", "rlhf"]
+  create_readme: true

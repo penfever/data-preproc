@@ -1,0 +1,59 @@
+# Example configuration for vision language dataset preprocessing
+
+# Base model configuration
+base_model: microsoft/kosmos-2-patch14-224
+tokenizer_config: microsoft/kosmos-2-patch14-224
+processor_type: auto  # Enable processor loading
+processor_config: microsoft/kosmos-2-patch14-224
+trust_remote_code: false
+
+# Tokenizer settings
+tokenizer_use_fast: true
+tokenizer_pad_side: left
+
+# Sequence length
+sequence_len: 2048
+
+# Output configuration
+dataset_prepared_path: ./data/prepared_vl
+
+# Vision Language Dataset configuration
+datasets:
+  # Vision Language dataset with LLaVA format
+  - path: local_vl_dataset.json  # Local JSON file
+    type: vision_language  # Use vision language strategy
+    mm_plugin: llava  # Use LLaVA multimodal plugin
+    image_token: "<image>"
+    video_token: "<video>" 
+    audio_token: "<audio>"
+    
+  # Alternative: Use generic VL type
+  # - path: HuggingFaceM4/COCO-Conversations
+  #   type: vl
+  #   mm_plugin: base
+  #   image_token: "<img>"
+
+# Training configuration
+train_on_inputs: false  # Don't train on instruction part
+val_set_size: 0.05      # 5% validation split
+
+# Processing configuration
+batch_size: 2  # Smaller batch size for VL data
+num_epochs: 1
+
+# Special tokens (optional)
+special_tokens:
+  pad_token: "<pad>"
+  
+# Vision processing settings (optional)
+image_max_pixels: 768 # 768x768 max resolution
+image_min_pixels: 64  # 64x64 min resolution
+video_max_pixels: 256 # 256x256 max resolution for video frames
+video_min_pixels: 16  # 16x16 min resolution for video frames
+video_fps: 2.0        # Video sampling FPS
+video_maxlen: 158     # Max frames per video
+audio_sampling_rate: 16000  # Audio sampling rate
+
+# Debug settings
+debug: false
+seed: 42

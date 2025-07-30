@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "data-preproc"
+version = "0.1.0"
+description = "Data preprocessing for LLMs and VLMs"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "Benjamin Feuer", email = "penfever@gmail.com"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+]
+
+dependencies = [
+    "transformers>=4.36.0",
+    "datasets>=2.14.0",
+    "tokenizers>=0.15.0",
+    "torch>=2.0.0",
+    "fire>=0.5.0",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
+    "addict>=2.4.0",
+    "requests>=2.31.0",
+    "rapidfuzz>=3.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black>=22.0",
+    "isort>=5.0",
+    "flake8>=4.0",
+]
+vision = [
+    "Pillow>=8.0.0",
+    "av>=8.0.0",
+    "librosa>=0.9.0",
+]
+toxicity = [
+    "detoxify>=0.5.0",
+    "open-clip-torch>=2.20.0",
+    "torch>=2.0.0",
+]
+
+[project.scripts]
+data-preproc = "data_preproc.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/penfever/data-preproc"
+Repository = "https://github.com/penfever/data-preproc"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["data_preproc*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py38']
+
+[tool.isort]
+profile = "black"

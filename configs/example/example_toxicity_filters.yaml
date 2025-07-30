@@ -1,0 +1,108 @@
+# Example configuration showing how to use toxicity filters
+# This demonstrates both text and image toxicity filtering
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/toxicity_filtered
+
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified
+    type: vision_language
+    split: train[:1000]  # Process first 1000 samples
+    
+    # Dataset processors (applied in order)
+    processors:
+      # 1. Filter text content for toxicity
+      - type: text_toxicity_filter
+        model_type: "multilingual"  # Options: "original", "unbiased", "multilingual"
+        
+        # Text fields to check (combines all fields for toxicity analysis)
+        text_fields: ["problem", "solution", "question", "answer", "text", "content"]
+        
+        # Toxicity thresholds (0.0 to 1.0, higher = more toxic)
+        toxicity_threshold: 0.6          # Overall toxicity
+        severe_toxicity_threshold: 0.4   # Severe toxicity (lower threshold)
+        obscene_threshold: 0.7           # Obscene content
+        threat_threshold: 0.5            # Threatening content (lower threshold)
+        insult_threshold: 0.7            # Insulting content
+        identity_attack_threshold: 0.5   # Identity-based attacks (lower threshold)
+        
+        # Which toxicity types to check
+        check_types: ["toxicity", "severe_toxicity", "threat", "identity_attack"]
+        
+        # Filter mode: "any" (filter if ANY type exceeds) or "all" (filter if ALL types exceed)
+        filter_mode: "any"
+        
+        # Log filtered examples for debugging
+        log_filtered: true
+      
+      # 2. Filter images for NSFW/inappropriate content
+      - type: image_toxicity_filter
+        model_name: "ViT-B-32"      # CLIP model to use
+        pretrained: "openai"        # Pretrained weights
+        
+        # Image fields to check
+        image_fields: ["image", "images"]
+        
+        # Safety categories (you can customize these)
+        neutral_categories: [
+          "a photo", "a picture", "a drawing", "an illustration",
+          "a painting", "a rendering", "a screenshot", "a selfie",
+          "a landscape", "a portrait", "nature", "architecture",
+          "food", "animals", "objects", "technology"
+        ]
+        
+        nsfw_categories: [
+          "porn", "pornography", "sex", "sexual content", "nudity",
+          "naked", "explicit content", "adult content", "nsfw content",
+          "erotic", "xxx", "hardcore", "intimate", "sexual"
+        ]
+        
+        underage_categories: [
+          "child", "children", "kid", "kids", "minor", "minors",
+          "teen", "teenager", "adolescent", "young", "youth",
+          "baby", "infant", "toddler", "preteen", "underage"
+        ]
+        
+        # Similarity thresholds (0.0 to 1.0, higher = more similar)
+        nsfw_threshold: 0.25           # Conservative threshold
+        underage_threshold: 0.25       # Conservative threshold
+        
+        # Filtering settings
+        filter_nsfw: true              # Filter definite NSFW content
+        filter_unsure: true            # Filter uncertain/borderline content (conservative)
+        filter_underage_risk: true     # Filter content with underage risk
+        
+        # Log filtered examples for debugging
+        log_filtered: true
+      
+      # 3. Additional filters (optional)
+      - type: multimodal_filter
+        filter_corrupted_images: true
+        max_image_size: [1024, 1024]
+        min_image_size: [32, 32]
+
+    # MM Plugin configuration (for final tokenization step)
+    mm_plugin: base
+    image_token: "<image>"
+    video_token: "<video>"
+    audio_token: "<audio>"
+
+train_on_inputs: false
+val_set_size: 0.05
+batch_size: 4  # Smaller batch size due to CLIP processing
+debug: false
+
+# HF upload configuration
+hf_upload:
+  enabled: true
+  organization: "your-org"
+  dataset_name: "multimodal-toxicity-filtered"
+  private: false
+  description: "Vision-language dataset with toxicity filtering applied"
+  license: "apache-2.0"
+  tags: ["vision-language", "multimodal", "toxicity-filtered", "safe"]
+  create_readme: true

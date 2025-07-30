@@ -1,0 +1,107 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Project specific - Data preprocessing
+data/
+preprocessed_*/
+processed_*/
+outputs/
+*.arrow
+*.parquet
+*.jsonl
+*.json.gz
+*.csv.gz
+*.tsv
+external
+
+# Logs and temporary files
+*.log
+logs/
+temp_*/
+tmp_*/
+.tmp/
+
+# Model files
+*.checkpoint
+*.pkl
+*.pth
+*.pt
+*.safetensors
+*.bin
+
+# HuggingFace cache
+.cache/
+hub/
+
+# Temporary config files
+*_temp.yaml
+*_test.yaml
+
+# Conda environment files
+*.conda
+*.yml.lock
+
+# Jupyter
+.ipynb_checkpoints
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+htmlcov/
+
+# Documentation
+docs/_build/
+
+# Claude
+CLAUDE.md
+.claude/
+claude_prompts/
+
+# Private configs
+private

@@ -1,0 +1,82 @@
+# Example configuration for image-only toxicity filtering
+# This demonstrates CLIP-based image safety filtering following LAION's approach
+
+base_model: microsoft/DialoGPT-medium
+tokenizer_config: microsoft/DialoGPT-medium
+
+sequence_len: 2048
+dataset_prepared_path: ./data/image_toxicity_filtered
+
+datasets:
+  - path: nlphuji/flickr30k
+    type: alpaca
+    split: train[:2000]  # Process first 2000 samples
+    
+    # Dataset processors (applied in order)
+    processors:
+      # 1. Filter images for inappropriate content using CLIP
+      - type: image_toxicity_filter
+        model_name: "ViT-L-14"     # Larger CLIP model for better accuracy
+        pretrained: "openai"       # Use OpenAI pretrained weights
+        
+        # Image fields to check
+        image_fields: ["image", "images"]
+        
+        # Conservative safety categories for production use
+        neutral_categories: [
+          "a photo", "a picture", "a drawing", "an illustration",
+          "a painting", "a rendering", "a screenshot", "a selfie",
+          "a landscape", "a portrait", "nature", "architecture",
+          "food", "animals", "objects", "technology", "art",
+          "sports", "travel", "street scene", "indoor scene",
+          "outdoor scene", "family photo", "professional photo"
+        ]
+        
+        nsfw_categories: [
+          "porn", "pornography", "sex", "sexual content", "nudity",
+          "naked", "explicit content", "adult content", "nsfw content",
+          "erotic", "xxx", "hardcore", "intimate", "sexual activity",
+          "genitals", "breast", "buttocks", "suggestive", "provocative"
+        ]
+        
+        underage_categories: [
+          "child", "children", "kid", "kids", "minor", "minors",
+          "teen", "teenager", "adolescent", "young person", "youth",
+          "baby", "infant", "toddler", "preteen", "underage person",
+          "school child", "young boy", "young girl", "juvenile"
+        ]
+        
+        # Conservative thresholds for safety-critical applications
+        nsfw_threshold: 0.2            # Very conservative
+        underage_threshold: 0.2        # Very conservative
+        
+        # Strict filtering settings
+        filter_nsfw: true              # Filter definite NSFW content
+        filter_unsure: true            # Filter uncertain content (conservative)
+        filter_underage_risk: true     # Filter any underage risk
+        
+        # Enable detailed logging
+        log_filtered: true
+      
+      # 2. Additional image quality filters (optional)
+      - type: multimodal_filter
+        filter_corrupted_images: true
+        require_images: true           # Require at least one image
+        max_image_size: [2048, 2048]
+        min_image_size: [64, 64]
+
+train_on_inputs: false
+val_set_size: 0.1
+batch_size: 8  # Smaller batch size due to CLIP processing
+debug: false
+
+# HF upload configuration
+hf_upload:
+  enabled: true
+  organization: "your-org"
+  dataset_name: "flickr30k-image-safety-filtered"
+  private: false
+  description: "Flickr30k dataset with CLIP-based image safety filtering"
+  license: "cc-by-4.0"
+  tags: ["vision", "images", "safety-filtered", "clip-filtered"]
+  create_readme: true

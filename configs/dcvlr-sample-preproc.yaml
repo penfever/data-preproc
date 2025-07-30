@@ -1,0 +1,97 @@
+# Simple filtering configuration that preserves original dataset structure
+# Uses HF Datasets .filter() method for efficient filtering without transformation
+
+base_model: Qwen/Qwen2.5-7B-Instruct
+tokenizer_config: Qwen/Qwen2.5-7B-Instruct
+trust_remote_code: true
+sequence_len: 16384
+
+dataset_prepared_path: ./data/limo_vis
+
+datasets:
+  - path: penfever/GAIR_LIMO_img_v1
+    type: vision_language  # Still need this for file path generation
+    split: train
+    filter_only: true   # Skip tokenization strategy - just filter and save
+    
+    # Use HF filter processor that preserves original structure
+    processors:
+      # First filter by image count
+      - type: image_count_filter
+        min_images: 1     # Filter out samples with less than 1
+        max_images: 1     # Filter out samples with more than 1
+      
+      # Resize images larger than 768px down to 768px max
+      - type: image_transform
+        max_size: [768, 768]
+        resize_mode: "keep_aspect_ratio"
+      
+      # Filter out toxic text content
+      - type: text_toxicity_filter
+        model_type: "original"           # Use original Detoxify model
+        toxicity_threshold: 0.9          # Conservative threshold
+        check_types: ["toxicity", "severe_toxicity", "obscene", "threat", "insult", "identity_attack"]
+        filter_mode: "any"              # Filter if any toxicity type exceeds threshold
+        text_fields: ["solution"]       # Check solution field for toxicity
+        log_filtered: false             # Don't log filtered examples
+      
+      # Filter out inappropriate images using CLIP-based detection
+      - type: image_toxicity_filter
+        model_name: "ViT-B-32"          # OpenCLIP model for image analysis
+        pretrained: "openai"            # Use OpenAI pretrained weights
+        filter_nsfw: true               # Filter NSFW content
+        filter_unsure: true             # Also filter uncertain cases (conservative)
+        filter_underage_risk: true      # Filter potential underage content
+        nsfw_threshold: 0.6             # Conservative NSFW threshold
+        underage_threshold: 0.6         # Conservative underage threshold
+        log_filtered: false             # Don't log filtered examples
+      
+      - type: hf_filter
+        max_tokens: 13500              # Filter by tokenized length
+        min_tokens: 200                # Min meaningful content
+        filter_corrupted_images: true # Remove corrupted images
+        min_image_size: [32, 32]
+        text_fields: ["solution"]  # Fields to tokenize for length check
+      
+      # Deduplication against external datasets and itself
+      - type: deduplicator
+        method: "combined"             # Use both fuzzy and n-gram methods
+        column: "solution"             # Deduplicate based on solution field
+        similarity_threshold: 98.0     # Similarity threshold (0-100)
+        ngram_size: 15                 # N-gram size for token-level comparison
+        external_datasets:
+          # Deduplicate against OlympiadBench
+          - path: "Hothan/OlympiadBench"
+            subset: "_ALL"
+            split: "train"
+            column: "solution"
+          
+          # Deduplicate against VMCBench
+          - path: "suyc21/VMCBench"
+            split: "dev"
+            column: "question"
+          
+          # Deduplicate against LiveXiv-VLMEvalKit
+          - path: "penfever/LiveXiv-VLMEvalKit"
+            split: "train"
+            column: "question"
+      
+      # Random downsampling to 1,000 samples
+      - type: random_sampler
+        sample_size: 1000
+        seed: 42
+
+train_on_inputs: false
+val_set_size: 0
+batch_size: 8
+
+# HF upload
+hf_upload:
+  enabled: true
+  organization: "penfever"
+  dataset_name: "limo-vis-mid-resize-safe"
+  private: false
+  description: "Original dataset structure preserved, filtered by token length, image quality, and toxicity (text and image)"
+  license: "apache-2.0"
+  tags: ["vision-language", "filtered", "original-structure", "toxicity-filtered", "safe-content"]
+  create_readme: true

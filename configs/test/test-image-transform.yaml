@@ -1,0 +1,78 @@
+# Test configuration for image_transform processor
+# This config demonstrates various image transformations
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/test_image_transform
+
+datasets:
+  - path: penfever/MM-MathInstruct-longest-20k-solutions-with-images
+    type: vision_language
+    split: train
+    filter_only: true
+    
+    processors:
+      # First apply schema transformation
+      - type: advanced_mapping
+        mappings:
+          - source: question
+            target: problem
+          - source: solution
+            target: solution
+          - source: image
+            target: image
+        keep_unmapped: false
+      
+      # Apply image transformations
+      - type: image_transform
+        image_fields: ["image"]
+        output_format: "pil"
+        skip_on_error: true
+        transforms:
+          # Resize to a standard size
+          - type: resize
+            size: [256, 256]
+            interpolation: bilinear
+          
+          # Center crop to square
+          - type: center_crop
+            size: 224
+          
+          # Apply some color adjustments
+          - type: color_jitter
+            brightness: 0.1
+            contrast: 0.1
+            saturation: 0.1
+      
+      # Transform solution text format
+      - type: regex_transform
+        transformations:
+          - field: solution
+            pattern: '^(.+)$'
+            replacement: '<think>\1</think>\n\n<answer>See solution above</answer>'
+            flags: ["DOTALL"]
+      
+      # Apply basic filtering
+      - type: image_count_filter
+        min_images: 1
+        max_images: 1
+      
+      # Filter by token length
+      - type: hf_filter
+        max_tokens: 2000
+        min_tokens: 200
+        text_fields: ["problem", "solution"]
+
+train_on_inputs: false
+val_set_size: 0
+batch_size: 4
+
+# Test upload
+hf_upload:
+  enabled: false  # Disabled for testing
+  organization: "penfever"
+  dataset_name: "test-image-transform"
+  private: true

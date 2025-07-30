@@ -1,0 +1,86 @@
+# Test configuration demonstrating new modular processor features
+# This config shows how to use named processors, conditional processing, and pipeline composition
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/test_modular_processors
+
+# Error handling configuration
+error_handling:
+  mode: "log_and_continue"
+  max_errors: 10
+  log_errors: true
+
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified  # Using a small test dataset
+    type: vision_language
+    split: train
+    filter_only: true
+    limit: 50  # Small test dataset
+    
+    processors:
+      # Example 1: Named processor for reuse
+      - name: "initial_filter"
+        type: hf_filter
+        max_tokens: 4000
+        min_tokens: 200
+        text_fields: ["problem", "solution"]
+        
+      # Example 2: Conditional processor (only process if image exists)
+      - name: "image_processor"
+        type: image_transform
+        condition:
+          field_exists: ["image"]
+        image_fields: ["image"]
+        max_size: [512, 512]
+        resize_mode: "keep_aspect_ratio"
+        
+      # Example 3: Another conditional processor (only if certain fields exist)
+      - name: "conditional_mapper"
+        type: advanced_mapping
+        condition:
+          field_exists: ["problem", "solution"]
+        mappings:
+          - source: "problem"
+            target: "question"
+          - source: "solution" 
+            target: "answer"
+        keep_unmapped: true
+        
+      # Example 4: Pipeline processor composition
+      - name: "cleanup_pipeline"
+        type: pipeline
+        processors:
+          # Reference to previously defined named processor
+          - "initial_filter"
+          
+          # Inline processor configuration
+          - type: image_count_filter
+            min_images: 1
+            max_images: 1
+            
+          # Another filter with different parameters
+          - name: "strict_filter"
+            type: hf_filter
+            max_tokens: 2000
+            min_tokens: 200
+            text_fields: ["question", "answer"]
+            
+      # Example 5: Reuse the same processor type with different config
+      - name: "final_filter"
+        type: hf_filter
+        max_tokens: 1500
+        min_tokens: 50
+        filter_corrupted_images: true
+        text_fields: ["question", "answer"]
+
+train_on_inputs: false
+val_set_size: 0
+batch_size: 4
+
+# HF upload
+hf_upload:
+  enabled: false  # Disabled for testing

@@ -1,0 +1,83 @@
+# Test configuration for regex_filter processor
+# Demonstrates various pattern-based filtering scenarios
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/test_regex_filter
+
+datasets:
+  - path: penfever/MM-MathInstruct-longest-20k-solutions-with-images
+    type: vision_language
+    split: train
+    filter_only: true
+    
+    processors:
+      # First apply schema transformation
+      - type: advanced_mapping
+        mappings:
+          - source: question
+            target: problem
+          - source: solution
+            target: solution
+          - source: image
+            target: image
+        keep_unmapped: false
+      
+      # Apply regex-based content filtering
+      - type: regex_filter
+        logic_mode: "any"  # Filter if ANY pattern matches
+        default_flags: ["MULTILINE", "IGNORECASE"]
+        filter_patterns:
+          # Quality filters - remove poor quality content
+          - field: solution
+            pattern: '^.{0,100}$'  # Solutions too short (< 100 chars)
+            action: remove
+            description: "Solutions too short"
+          
+          - field: problem
+            pattern: '^.{0,20}$'   # Problems too short (< 20 chars)
+            action: remove
+            description: "Problems too short"
+          
+          # Content filters - ensure mathematical content
+          - field: problem
+            pattern: '\$.*?\$|\\[.*?\\]|\\(.*?\\)'  # Must have LaTeX math
+            action: keep_only
+            description: "Must contain math notation"
+          
+          # Remove refusal/error patterns
+          - field: solution
+            pattern: '(?i)(sorry|cannot|unable|not possible|error|broken)'
+            action: remove
+            description: "Refusal or error patterns"
+          
+          # Ensure substantive solutions
+          - field: solution
+            pattern: '(?i)(analysis|solution|step|therefore|hence|thus)'
+            action: keep_only
+            description: "Must contain solution keywords"
+      
+      # Apply basic filtering
+      - type: image_count_filter
+        min_images: 1
+        max_images: 1
+      
+      # Final token length check
+      - type: hf_filter
+        max_tokens: 5000
+        min_tokens: 200
+        text_fields: ["problem", "solution"]
+
+train_on_inputs: false
+val_set_size: 0
+batch_size: 4
+
+# Test upload (disabled)
+hf_upload:
+  enabled: false
+  organization: "penfever"
+  dataset_name: "test-regex-filter"
+  private: true

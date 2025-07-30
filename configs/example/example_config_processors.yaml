@@ -1,0 +1,55 @@
+# Example configuration showing how to use dataset processors
+# This replaces automatic format conversion with explicit, configurable processing
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/vl_prepared_processors
+
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified
+    type: vision_language
+    split: train[:100]  # Process first 100 samples
+    
+    # MM Plugin configuration (for final tokenization step)
+    mm_plugin: base
+    image_token: "<image>"
+    video_token: "<video>"
+    audio_token: "<audio>"
+    
+    # Dataset processors (applied in order)
+    processors:
+      # 1. Filter corrupted images and apply size limits
+      - type: multimodal_filter
+        filter_corrupted_images: true
+        max_image_size: [1024, 1024]
+        min_image_size: [32, 32]
+      
+      # 2. Filter by text length (optional)
+      - type: filter
+        max_length: 10000  # Max characters in text content
+        min_length: 10     # Min characters in text content
+      
+      # 3. Convert Q&A format to messages format (optional)
+      - type: qa_to_messages
+        question_field: problem
+        answer_field: solution
+        image_field: image
+
+train_on_inputs: false
+val_set_size: 0.05
+batch_size: 8
+debug: false
+
+# HF upload configuration
+hf_upload:
+  enabled: true
+  organization: "penfever"
+  dataset_name: "multimodal-open-r1-processed"
+  private: false
+  description: "Vision-language dataset processed with configurable processors"
+  license: "apache-2.0"
+  tags: ["vision-language", "multimodal", "instruction-following"]
+  create_readme: true

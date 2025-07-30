@@ -1,0 +1,14 @@
+include README.md
+include VL_CONFIGURATION_GUIDE.md
+include LICENSE
+include requirements.txt
+include run_tests.py
+recursive-include configs *.yaml
+recursive-include examples *.py *.json
+recursive-include demos *.py
+recursive-include tests *.py
+recursive-include data_preproc *.py
+global-exclude __pycache__
+global-exclude *.py[co]
+global-exclude *.log
+global-exclude .DS_Store

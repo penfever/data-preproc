@@ -1,0 +1,88 @@
+# Comprehensive demo configuration showing ALL available processor parameters
+# This file demonstrates every parameter available in the data-preproc processor system
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/demo_processed
+
+datasets:
+  - path: lmms-lab/multimodal-open-r1-8k-verified
+    type: vision_language
+    split: train[:100]  # Demo with 100 samples
+    filter_only: true   # Skip tokenization strategy - just filter and save
+    
+    # Demonstrate all available processors
+    processors:
+      # 1. HF Filter - Native HuggingFace .filter() with structure preservation
+      - type: hf_filter
+        max_tokens: 7500              # Max tokenized length
+        min_tokens: 10                # Min tokenized length
+        filter_corrupted_images: true # Check image integrity
+        max_image_size: [2048, 2048]  # Max image dimensions [width, height]
+        min_image_size: [32, 32]      # Min image dimensions [width, height]
+        text_fields: ["problem", "solution", "question", "answer", "text", "content"]  # Fields to tokenize for length check
+        
+      # 2. Filter - General filtering with various criteria
+      - type: filter
+        max_length: 10000             # Max characters in text content
+        min_length: 50                # Min characters in text content
+        required_fields: []           # Fields that must be present (empty = no requirements)
+        filter_corrupted_images: false # Image corruption check (redundant if using hf_filter)
+        
+      # 3. Multimodal Filter - Specialized multimodal filtering
+      - type: multimodal_filter
+        filter_corrupted_images: true # Remove corrupted images
+        require_images: false         # Whether to require at least one image
+        max_image_size: [2048, 2048]  # Max image dimensions
+        min_image_size: [32, 32]      # Min image dimensions
+        
+      # 4. Column Mapping - Rename fields
+      - type: column_mapping
+        column_mapping:
+          # old_name: new_name
+          problem: question           # Rename problem to question
+          solution: answer            # Rename solution to answer
+          
+      # 5. QA to Messages - Format conversion (optional)
+      - type: qa_to_messages
+        question_field: question      # Field containing questions (after mapping)
+        answer_field: answer          # Field containing answers (after mapping)
+        image_field: image            # Field containing images
+        question_alternatives: ["instruction", "input", "original_question"]
+        answer_alternatives: ["output", "response", "original_answer"]
+        
+      # 6. Passthrough - No-op processor (useful for testing)
+      - type: passthrough
+
+# Training configuration
+train_on_inputs: false
+val_set_size: 0.1
+batch_size: 8
+
+# Memory optimization
+memory_config:
+  use_streaming: false
+  prefetch_factor: 2
+  num_workers: 4
+
+# Debug options
+debug: false
+seed: 42
+validate_data: true
+
+# HuggingFace Hub upload configuration
+hf_upload:
+  enabled: false  # Disabled for demo
+  organization: "your-org"
+  dataset_name: "demo-processed-dataset"
+  private: false
+  description: "Dataset processed with all available processors"
+  license: "apache-2.0"
+  tags: ["demo", "all-processors", "multimodal"]
+  create_readme: true
+  push_to_hub_kwargs:
+    commit_message: "Upload processed dataset with all processors"
+    branch: "main"

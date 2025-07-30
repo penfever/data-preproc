@@ -1,0 +1,48 @@
+# Example configuration for data preprocessing
+
+# Base model configuration
+base_model: meta-llama/Llama-2-7b-hf
+tokenizer_config: meta-llama/Llama-2-7b-hf
+trust_remote_code: false
+
+# Tokenizer settings
+tokenizer_use_fast: true
+tokenizer_pad_side: left
+
+# Sequence length
+sequence_len: 2048
+
+# Output configuration
+dataset_prepared_path: ./data/prepared
+
+# Dataset configuration
+datasets:
+  # Alpaca-style instruction dataset
+  - path: tatsu-lab/alpaca
+    type: alpaca
+    
+  # You can add multiple datasets
+  # - path: Open-Orca/OpenOrca
+  #   type: alpaca
+  #   split: train[:10000]  # Use only first 10k examples
+
+# Training configuration
+train_on_inputs: false  # Don't train on instruction part
+val_set_size: 0.05      # 5% validation split
+
+# Processing configuration
+batch_size: 4
+num_epochs: 1
+
+# Special tokens (optional)
+special_tokens:
+  pad_token: "<pad>"
+  
+# Additional tokens to add (optional)
+# tokens:
+#   - "<|im_start|>"
+#   - "<|im_end|>"
+
+# Debug settings
+debug: false
+seed: 42

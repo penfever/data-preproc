@@ -1,0 +1,77 @@
+# Example configuration for filtering out refusal responses
+# Useful for removing examples where the model refuses to answer
+
+base_model: allenai/Molmo-7B-O-0924
+tokenizer_config: allenai/Molmo-7B-O-0924
+trust_remote_code: true
+
+sequence_len: 8192
+dataset_prepared_path: ./data/refusal_filtered
+
+datasets:
+  - path: penfever/MM-MathInstruct-to-r1-format-filtered
+    type: vision_language
+    split: train
+    filter_only: true
+    
+    processors:
+      # Remove examples with refusal patterns
+      - type: regex_filter
+        logic_mode: "any"  # Remove if ANY refusal pattern is found
+        default_flags: ["MULTILINE", "IGNORECASE"]
+        filter_patterns:
+          # Common refusal phrases in solutions
+          - field: solution
+            pattern: '(?i)(sorry|cannot help|unable to|not possible|inappropriate)'
+            action: remove
+            description: "Direct refusal phrases"
+          
+          - field: solution
+            pattern: '(?i)(i cannot|i am unable|i apologize|i\'m sorry)'
+            action: remove
+            description: "First-person refusals"
+          
+          - field: solution
+            pattern: '(?i)(against my|not appropriate|not suitable|harmful)'
+            action: remove
+            description: "Ethics-based refusals"
+          
+          - field: solution
+            pattern: '(?i)(don\'t have enough|insufficient information|unclear)'
+            action: remove
+            description: "Information insufficiency"
+          
+          # Remove very short solutions that might be refusals
+          - field: solution
+            pattern: '^.{0,50}$'
+            action: remove
+            description: "Suspiciously short solutions"
+          
+          # Ensure solutions have mathematical reasoning
+          - field: solution
+            pattern: '<think>.*?(step|calculate|solve|equation|formula).*?</think>'
+            action: keep_only
+            description: "Must contain mathematical reasoning"
+      
+      # Standard quality filters
+      - type: image_count_filter
+        min_images: 1
+        max_images: 1
+      
+      - type: hf_filter
+        max_tokens: 7000
+        min_tokens: 200
+        text_fields: ["problem", "solution"]
+
+train_on_inputs: false
+val_set_size: 0
+batch_size: 8
+
+hf_upload:
+  enabled: false  # Set to true when ready to upload
+  organization: "penfever"
+  dataset_name: "MM-MathInstruct-refusal-filtered"
+  private: false
+  description: "MM-MathInstruct dataset with refusal responses filtered out"
+  license: "apache-2.0"
+  tags: ["vision-language", "math", "filtered", "no-refusals"]
