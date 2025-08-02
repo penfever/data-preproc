@@ -236,6 +236,11 @@ def prepare_dataset(
                                 filtered_count = initial_count - final_count
                                 filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
                                 LOG.info(f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)")
+                            # Special handling for sample_packer processor
+                            elif hasattr(proc, 'process_dataset'):
+                                ds = proc.process_dataset(ds)
+                                final_count = len(ds)
+                                LOG.info(f"   Output: {final_count} packed examples from {initial_count} original examples")
                             else:
                                 # Apply standard processor with streaming/batched processing
                                 ds = _apply_processor_streaming(ds, proc, proc_identifier, error_handler)

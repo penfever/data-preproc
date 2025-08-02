@@ -1,0 +1,49 @@
+# Configuration for packing LongSafari/open-genome dataset samples
+# into 100k-128k token sequences
+
+# Model/tokenizer settings
+base_model: "gpt2"  # Using GPT-2 tokenizer for token counting
+tokenizer_config: "gpt2"
+
+# Dataset configuration
+datasets:
+  - path: "LongSafari/open-genome"
+    subset: "stage2"  # Using stage2 subset as requested
+    type: "alpaca"    # Basic text format
+    split: "train"
+    processors:
+      # First, take only the first 10000 samples as requested
+      - type: random_sampler
+        sample_size: 10000
+        seed: 42
+      
+      # Then pack samples together to reach target token length
+      - type: sample_packer
+        min_tokens: 100000      # Minimum tokens per packed sample
+        max_tokens: 128000      # Maximum tokens per packed sample
+        text_field: "text"      # Field containing the text to pack
+        separator: "\n\n"       # Separator between packed samples
+        tokenizer: "gpt2"       # Tokenizer to use for counting
+        max_samples: 10000      # Process at most 10000 samples
+
+# Output settings
+output_dir: "./output/open_genome_packed"
+push_to_hub: false  # Set to true if you want to upload to HuggingFace
+
+# Training settings (adjust as needed)
+sequence_len: 128000  # Maximum sequence length
+sample_packing: false  # Already packed by our processor
+pad_to_sequence_len: false
+shuffle: true
+seed: 42
+
+# Logging
+wandb_project: "open_genome_packing"
+wandb_entity: null
+wandb_watch: null
+wandb_name: "open_genome_100k_128k"
+wandb_log_model: false
+
+# Debug settings
+debug: false
+debug_num_examples: 5  # If debug is true, only process this many examples
