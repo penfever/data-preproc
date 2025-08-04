@@ -76,9 +76,9 @@ data-preproc --config config.yaml --hf_token "your_token"
 
 # Override config values using dot notation
 data-preproc --config config.yaml \
-  --preprocessing.input_dir /custom/input \
-  --preprocessing.output_dir /custom/output \
-  --sequence_len 4096
+  --dataset_prepared_path /custom/output \
+  --sequence_len 4096 \
+  --batch_size 8
 ```
 
 #### Command-Line Config Overrides
@@ -91,8 +91,8 @@ data-preproc --config config.yaml --sequence_len 4096 --batch_size 8
 
 # Override nested values using dot notation
 data-preproc --config config.yaml \
-  --preprocessing.input_dir /new/input \
-  --preprocessing.output_dir /new/output
+  --datasets.0.path "new/dataset" \
+  --datasets.0.split "train[:1000]"
 
 # Override deeply nested values
 data-preproc --config config.yaml \
@@ -128,9 +128,30 @@ sequence_len: 2048
 # Output directory
 dataset_prepared_path: "./data/prepared"
 
-# Dataset configuration
+# Dataset configuration - supports both HuggingFace repos and local files
 datasets:
+  # HuggingFace repository
   - path: "tatsu-lab/alpaca"
+    type: "alpaca"
+  
+  # Local JSON file
+  - path: "data/my_dataset.json"
+    type: "alpaca"
+  
+  # Local CSV file
+  - path: "/absolute/path/to/data.csv"
+    type: "completion"
+  
+  # Local Parquet files
+  - path: "parquet"
+    data_files:
+      - "train_data.parquet"
+      - "validation_data.parquet"
+    type: "chat_template"
+  
+  # Local directory with multiple files
+  - path: "json"
+    data_files: "data/*.json"
     type: "alpaca"
     
   # Example with subset (configuration)
@@ -458,6 +479,57 @@ datasets:
 
 For detailed processor documentation, see [PROCESSORS.md](PROCESSORS.md).
 
+### Loading Local Files
+
+Data-preproc seamlessly supports both HuggingFace Hub datasets and local files. You can specify local files using the same `path` parameter:
+
+```yaml
+datasets:
+  # Local JSON file (single file)
+  - path: "data/training_data.json"
+    type: "alpaca"
+    
+  # Local CSV file with absolute path
+  - path: "/home/user/datasets/qa_pairs.csv"
+    type: "completion"
+    
+  # Local Parquet files
+  - path: "data/dataset.parquet"
+    type: "chat_template"
+    
+  # Multiple files using data_files
+  - path: "json"  # Specify format when using data_files
+    data_files:
+      - "data/train_part1.json"
+      - "data/train_part2.json"
+      - "data/train_part3.json"
+    type: "alpaca"
+    
+  # Glob patterns for multiple files
+  - path: "csv"
+    data_files: "data/batch_*.csv"  # Matches batch_001.csv, batch_002.csv, etc.
+    type: "completion"
+    
+  # Mixed local and remote datasets
+  - path: "tatsu-lab/alpaca"  # Remote HF dataset
+    type: "alpaca"
+  - path: "custom_data.json"   # Local file
+    type: "alpaca"
+```
+
+**Supported File Formats:**
+- JSON (`.json`, `.jsonl`)
+- CSV (`.csv`)
+- Parquet (`.parquet`)
+- Text files (`.txt`)
+- Any format supported by HuggingFace's `datasets` library
+
+**File Loading Tips:**
+- Use relative paths from your config file location
+- Use absolute paths for files outside your project directory
+- Use `data_files` with glob patterns to load multiple files
+- Specify the format (e.g., `"json"`, `"csv"`) as the path when using `data_files`
+
 ### Dataset Subsets
 
 The package supports loading dataset subsets (configurations) for datasets that have multiple configurations:
@@ -533,10 +605,10 @@ data-preproc --config configs/example/example_vl_config.yaml
 # Preprocessing with custom HF token
 data-preproc --config configs/example/example_vl_config.yaml --hf_token hf_your_token
 
-# Override HF settings via CLI
+# Override HF settings via CLI  
 data-preproc --config config.yaml \
-  --hf_organization "my-custom-org" \
-  --hf_dataset_name "custom-dataset-name"
+  --hf_upload.organization "my-custom-org" \
+  --hf_upload.dataset_name "custom-dataset-name"
 ```
 
 #### Generated Content

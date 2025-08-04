@@ -1,9 +1,9 @@
 # Example configuration demonstrating the image_count_filter processor
 # This filters samples to only include those with 3-5 images
 
-model_id: "meta-llama/Meta-Llama-3-8B-Instruct"
+base_model: "meta-llama/Meta-Llama-3-8B-Instruct"
+tokenizer_config: "meta-llama/Meta-Llama-3-8B-Instruct"
 tokenizer_use_fast: true
-image_size: 224
 
 datasets:
   - path: "dataset-with-multiple-images"
@@ -26,13 +26,10 @@ datasets:
         min_length: 100
         max_length: 8000
 
-# Preprocessing options
-preprocessing:
-  chunk: false
-  pack: false
-  max_seq_len: 8192
-  drop_system_message: false
+# Output configuration
+dataset_prepared_path: "./processed_data"
 
-output:
-  path: "./processed_data"
-  push_to_hub: false
+# Training configuration
+sequence_len: 8192
+train_on_inputs: false
+batch_size: 2
