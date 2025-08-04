@@ -73,7 +73,43 @@ data-preproc --config config.yaml --debug --debug_num_examples 5
 
 # With HuggingFace upload
 data-preproc --config config.yaml --hf_token "your_token"
+
+# Override config values using dot notation
+data-preproc --config config.yaml \
+  --preprocessing.input_dir /custom/input \
+  --preprocessing.output_dir /custom/output \
+  --sequence_len 4096
 ```
+
+#### Command-Line Config Overrides
+
+You can override any configuration value from the command line using dot notation:
+
+```bash
+# Override flat values
+data-preproc --config config.yaml --sequence_len 4096 --batch_size 8
+
+# Override nested values using dot notation
+data-preproc --config config.yaml \
+  --preprocessing.input_dir /new/input \
+  --preprocessing.output_dir /new/output
+
+# Override deeply nested values
+data-preproc --config config.yaml \
+  --vl_config.image_processing.max_size "[2048, 2048]" \
+  --vl_config.video_processing.max_frames 32
+
+# Add new configuration fields
+data-preproc --config config.yaml \
+  --custom_option.new_field "value" \
+  --processors.0.max_tokens 10000
+```
+
+This feature is particularly useful for:
+- Running experiments with different parameters
+- Scripting and automation
+- Environment-specific overrides
+- CI/CD pipelines
 
 ### Configuration
 

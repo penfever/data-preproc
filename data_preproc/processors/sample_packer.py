@@ -14,9 +14,6 @@ class SamplePackerProcessor(DatasetProcessor):
     
     This processor combines multiple text samples until reaching a target token range,
     useful for creating long-context training data from shorter samples.
-    
-    Note: This processor works differently from others - it processes the entire dataset
-    at once rather than individual examples, since it needs to combine multiple samples.
     """
     
     def __init__(self, config: Dict[str, Any]):
@@ -26,14 +23,13 @@ class SamplePackerProcessor(DatasetProcessor):
         self.text_field = config.get("text_field", "text")
         self.separator = config.get("separator", "\n\n")
         self.tokenizer_name = config.get("tokenizer", "gpt2")
-        self.max_samples = config.get("max_samples", 10000)
         
         # Initialize tokenizer
         self.tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(self.tokenizer_name)
+        logger.info(f"Initialized SamplePackerProcessor with {self.min_tokens}-{self.max_tokens} token range")
         
     def process_example(self, example: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """Not used - this processor needs access to the full dataset."""
-        # This processor needs to be handled specially in the pipeline
         raise NotImplementedError("SamplePackerProcessor requires full dataset access. Use process_dataset instead.")
     
     def get_required_columns(self) -> List[str]:
@@ -42,34 +38,39 @@ class SamplePackerProcessor(DatasetProcessor):
         
     def process_dataset(self, dataset: Dataset) -> Dataset:
         """Pack samples together to reach target token lengths."""
-        logger.info(f"Packing samples to reach {self.min_tokens}-{self.max_tokens} tokens")
+        logger.info(f"Packing {len(dataset)} samples to reach {self.min_tokens}-{self.max_tokens} tokens")
         
         packed_samples = []
         current_texts = []
         current_token_count = 0
         samples_processed = 0
         
-        for sample in dataset:
-            if samples_processed >= self.max_samples:
-                break
-                
+        # Pre-calculate separator tokens once
+        separator_tokens = len(self.tokenizer.encode(self.separator)) - 1  # -1 for BOS token
+        
+        for i, sample in enumerate(dataset):
             text = sample.get(self.text_field, "")
             if not text:
                 continue
                 
+            # Tokenize and get length
             text_tokens = len(self.tokenizer.encode(text))
+            samples_processed += 1
             
             # Check if adding this sample would exceed max tokens
-            separator_tokens = len(self.tokenizer.encode(self.separator)) if current_texts else 0
+            additional_tokens = text_tokens
+            if current_texts:  # Add separator tokens if not first sample
+                additional_tokens += separator_tokens
             
-            if current_token_count + text_tokens + separator_tokens > self.max_tokens:
+            if current_token_count + additional_tokens > self.max_tokens:
                 # Save current pack if it meets minimum threshold
                 if current_token_count >= self.min_tokens:
                     packed_text = self.separator.join(current_texts)
                     packed_samples.append({self.text_field: packed_text})
-                    logger.debug(f"Created pack with {current_token_count} tokens")
+                    if len(packed_samples) % 100 == 0:
+                        logger.info(f"Created {len(packed_samples)} packs so far...")
                 
-                # Start new pack
+                # Start new pack with current sample
                 current_texts = [text]
                 current_token_count = text_tokens
             else:
@@ -79,19 +80,42 @@ class SamplePackerProcessor(DatasetProcessor):
                 current_texts.append(text)
                 current_token_count += text_tokens
             
-            samples_processed += 1
-            
             # Log progress
-            if samples_processed % 100 == 0:
+            if samples_processed % 10000 == 0:
                 logger.info(f"Processed {samples_processed} samples, created {len(packed_samples)} packs")
         
-        # Handle remaining samples
-        if current_texts and current_token_count >= self.min_tokens:
-            packed_text = self.separator.join(current_texts)
-            packed_samples.append({self.text_field: packed_text})
-            logger.debug(f"Created final pack with {current_token_count} tokens")
+        # IMPORTANT: Handle remaining samples at the end
+        # If we have accumulated samples, create final pack even if below min_tokens
+        if current_texts:
+            if current_token_count >= self.min_tokens:
+                # Normal case: meets minimum threshold
+                packed_text = self.separator.join(current_texts)
+                packed_samples.append({self.text_field: packed_text})
+                logger.info(f"Created final pack with {current_token_count} tokens")
+            else:
+                # Below minimum: try to add to last pack if possible
+                if packed_samples and current_token_count > 0:
+                    # Get the last pack and check if we can add to it
+                    last_pack = packed_samples[-1][self.text_field]
+                    last_pack_tokens = len(self.tokenizer.encode(last_pack))
+                    
+                    if last_pack_tokens + separator_tokens + current_token_count <= self.max_tokens:
+                        # Add to last pack
+                        packed_samples[-1][self.text_field] = last_pack + self.separator + self.separator.join(current_texts)
+                        logger.info(f"Added {len(current_texts)} remaining samples to last pack")
+                    else:
+                        # Create a new pack even though it's below minimum
+                        packed_text = self.separator.join(current_texts)
+                        packed_samples.append({self.text_field: packed_text})
+                        logger.info(f"Created final pack with {current_token_count} tokens (below minimum)")
+                else:
+                    # No previous packs, create one anyway
+                    packed_text = self.separator.join(current_texts)
+                    packed_samples.append({self.text_field: packed_text})
+                    logger.info(f"Created single pack with {current_token_count} tokens")
         
-        logger.info(f"Created {len(packed_samples)} packed samples from {samples_processed} original samples")
+        logger.info(f"Packing complete: {len(packed_samples)} packed samples from {samples_processed} original samples")
+        logger.info(f"Packing ratio: {samples_processed / len(packed_samples):.1f}:1")
         
         # Create new dataset from packed samples
         return Dataset.from_list(packed_samples)

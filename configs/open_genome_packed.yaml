@@ -12,9 +12,9 @@ datasets:
     type: "alpaca"    # Basic text format
     split: "train"
     processors:
-      # First, take only the first 10000 samples as requested
+      # First, randomly sample a subset of the large dataset
       - type: random_sampler
-        sample_size: 10000
+        sample_size: 400000     # Take 100k samples from 2.6M total
         seed: 42
       
       # Then pack samples together to reach target token length
@@ -24,11 +24,9 @@ datasets:
         text_field: "text"      # Field containing the text to pack
         separator: "\n\n"       # Separator between packed samples
         tokenizer: "gpt2"       # Tokenizer to use for counting
-        max_samples: 10000      # Process at most 10000 samples
 
 # Output settings
 output_dir: "./output/open_genome_packed"
-push_to_hub: false  # Set to true if you want to upload to HuggingFace
 
 # Training settings (adjust as needed)
 sequence_len: 128000  # Maximum sequence length
@@ -47,3 +45,14 @@ wandb_log_model: false
 # Debug settings
 debug: false
 debug_num_examples: 5  # If debug is true, only process this many examples
+
+# HF upload
+hf_upload:
+  enabled: true
+  organization: "penfever"
+  dataset_name: "open_genome_packing"
+  private: false
+  description: "Sample packed open genome"
+  license: "apache-2.0"
+  tags: ["genomics"]
+  create_readme: true

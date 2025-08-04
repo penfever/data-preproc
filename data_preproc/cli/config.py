@@ -62,7 +62,8 @@ def load_cfg(
 
     Args:
         config: Path to config YAML file.
-        kwargs: Additional config overrides.
+        kwargs: Additional config overrides. Supports dot notation for nested values
+               (e.g., preprocessing.output_dir="/path").
 
     Returns:
         Loaded configuration as DictDefault.
@@ -73,8 +74,20 @@ def load_cfg(
     with open(config, encoding="utf-8") as file:
         cfg = yaml.safe_load(file)
     
-    # Apply any kwargs overrides
-    cfg.update(kwargs)
+    # Apply any kwargs overrides with support for dot notation
+    for key, value in kwargs.items():
+        if '.' in key:
+            # Handle nested keys like "preprocessing.output_dir"
+            parts = key.split('.')
+            current = cfg
+            for part in parts[:-1]:
+                if part not in current:
+                    current[part] = {}
+                current = current[part]
+            current[parts[-1]] = value
+        else:
+            # Handle flat keys
+            cfg[key] = value
     
     # Convert to DictDefault for attribute access
     cfg = DictDefault(cfg)
