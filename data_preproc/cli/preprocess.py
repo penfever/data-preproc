@@ -1,6 +1,8 @@
 """CLI to run preprocessing of a dataset."""
 
 from pathlib import Path
+import sys
+from typing import List
 from typing import Union
 
 import fire
@@ -104,6 +106,32 @@ def do_cli(
 def main():
     """Main entry point."""
     load_dotenv()
+    # Normalize short flag aliases before Fire parses arguments
+    # Map `-c value` and `-c=value` to `--config value`
+    argv = sys.argv[1:]
+    normalized: List[str] = []
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "-c":
+            normalized.append("--config")
+            # If a value follows, attach it; Fire will handle missing value errors
+            if i + 1 < len(argv):
+                normalized.append(argv[i + 1])
+                i += 2
+            else:
+                i += 1
+            continue
+        if arg.startswith("-c="):
+            normalized.append("--config")
+            normalized.append(arg.split("=", 1)[1])
+            i += 1
+            continue
+        normalized.append(arg)
+        i += 1
+
+    sys.argv = [sys.argv[0], *normalized]
+
     fire.Fire(do_cli)
 
 
