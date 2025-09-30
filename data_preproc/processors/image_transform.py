@@ -36,6 +36,9 @@ except ImportError:
     LOG.warning("Numpy not available")
 
 
+ALLOWED_RESIZE_MODES = {"keep_aspect_ratio", "exact"}
+
+
 class ImageTransformProcessor(DatasetProcessor):
     """Processor that applies torchvision-style image transformations.
     
@@ -62,6 +65,11 @@ class ImageTransformProcessor(DatasetProcessor):
         # Simple resize parameters (alternative to transforms)
         self.max_size = config.get("max_size")
         self.resize_mode = config.get("resize_mode", "keep_aspect_ratio")
+        if self.resize_mode not in ALLOWED_RESIZE_MODES:
+            raise ValueError(
+                f"Unsupported resize_mode: {self.resize_mode}. "
+                f"Expected one of: {sorted(ALLOWED_RESIZE_MODES)}"
+            )
         
         # If max_size is provided, create a simple resize transform
         if self.max_size and not self.transforms:
@@ -104,6 +112,12 @@ class ImageTransformProcessor(DatasetProcessor):
             size = params.get("size")
             if not size:
                 raise ValueError("Resize transform requires 'size' parameter")
+            resize_mode = params.get("mode", "exact")
+            if resize_mode not in ALLOWED_RESIZE_MODES:
+                raise ValueError(
+                    f"Unsupported resize mode '{resize_mode}' in transform. "
+                    f"Expected one of: {sorted(ALLOWED_RESIZE_MODES)}"
+                )
             
         elif transform_type in ["center_crop", "random_crop"]:
             size = params.get("size")
@@ -286,6 +300,11 @@ class ImageTransformProcessor(DatasetProcessor):
         size = params["size"]
         interpolation = params.get("interpolation", "bilinear")
         mode = params.get("mode", "exact")
+        if mode not in ALLOWED_RESIZE_MODES:
+            raise ValueError(
+                f"Unsupported resize mode '{mode}'. "
+                f"Expected one of: {sorted(ALLOWED_RESIZE_MODES)}"
+            )
         
         # Convert size to tuple if needed
         if isinstance(size, int):

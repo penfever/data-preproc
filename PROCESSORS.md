@@ -142,6 +142,8 @@ processors:
     filter_corrupted_images: true   # Check image integrity (optional, default: false)
     max_image_size: [2048, 2048]    # Max image dimensions [width, height] (optional)
     min_image_size: [32, 32]        # Min image dimensions [width, height] (optional)
+    token_field: input_ids          # Optional explicit token column to use
+    force_recompute: true           # Force HF datasets to recompute filter without cache reuse
     text_fields: ["problem", "solution", "question", "answer", "text", "content"]  # Fields to tokenize
 ```
 
@@ -151,6 +153,8 @@ processors:
 - `filter_corrupted_images` (bool, optional): Validate and remove corrupted images
 - `max_image_size` (list[int, int], optional): Maximum allowed image dimensions
 - `min_image_size` (list[int, int], optional): Minimum required image dimensions
+- `token_field` (str, optional): Column containing pre-tokenized sequences to count. Falls back to concatenated `text_fields` when omitted.
+- `force_recompute` (bool, optional): When true, disable Hugging Face dataset cache reuse during filtering.
 - `text_fields` (list, optional): List of fields to concatenate and tokenize for length checking
 
 **Note:** The `hf_filter` processor requires a tokenizer to check token lengths. It preserves the original dataset structure and only filters examples.

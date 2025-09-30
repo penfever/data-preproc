@@ -1,6 +1,6 @@
-"""Tokenization utilities for dataset preprocessing"""
+"""Tokenization utilities for dataset preprocessing."""
 
-from typing import Optional
+from typing import Any, Optional
 
 from datasets import Dataset
 from transformers import PreTrainedTokenizerBase
@@ -8,6 +8,44 @@ from transformers import PreTrainedTokenizerBase
 from data_preproc.utils.logging import get_logger
 
 LOG = get_logger(__name__)
+
+
+def token_length_from_value(
+    value: Any,
+    tokenizer: PreTrainedTokenizerBase,
+    *,
+    add_special_tokens: bool = False,
+) -> Optional[int]:
+    """Return the token length for raw or pre-tokenized values."""
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        text = value
+    elif isinstance(value, list):
+        if not value:
+            return None
+        if all(isinstance(item, int) for item in value):
+            return len(value)
+
+        string_parts = [part for part in value if isinstance(part, str)]
+        if string_parts:
+            text = "\n\n".join(string_parts)
+        else:
+            return None
+    else:
+        length_attr = getattr(value, "__len__", None)
+        if callable(length_attr):
+            try:
+                length = len(value)
+                if isinstance(length, int):
+                    return length
+            except TypeError:
+                return None
+        return None
+
+    tokens = tokenizer.encode(text, add_special_tokens=add_special_tokens)
+    return len(tokens)
 
 
 def check_dataset_labels(

@@ -1,17 +1,335 @@
 """Data preparation utilities."""
 
-import logging
-import os
 import gc
-from typing import Optional, Tuple, List, Any, Dict, Union
+import io
+import json
+import logging
+import math
+import os
+import statistics
+from collections import Counter
+from datetime import datetime
 from pathlib import Path
-from datasets import Dataset, DatasetDict, load_dataset, concatenate_datasets, get_dataset_config_names
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from data_preproc.utils.dict import DictDefault
+from datasets import Dataset, DatasetDict, concatenate_datasets, get_dataset_config_names, load_dataset
+
 from data_preproc.prompt_strategies import load
-from data_preproc.utils.error_handling import ErrorHandlingConfig, ErrorHandlingWrapper, ErrorHandlingMode, safe_dataset_iterator, safe_process_example
+from data_preproc.utils.dict import DictDefault
+from data_preproc.utils.error_handling import (
+    ErrorHandlingConfig,
+    ErrorHandlingMode,
+    ErrorHandlingWrapper,
+    safe_dataset_iterator,
+    safe_process_example,
+)
+from data_preproc.utils.tokenization import token_length_from_value
 
 LOG = logging.getLogger(__name__)
+
+
+def _infer_image_fields(dataset: Dataset) -> List[str]:
+    """Identify columns that contain image data."""
+    if not dataset or len(dataset) == 0:
+        return []
+
+    image_fields: List[str] = []
+    features = getattr(dataset, "features", None)
+
+    if features is not None:
+        try:
+            from datasets.features import Image, Sequence
+
+            for name, feature in features.items():
+                if isinstance(feature, Image):
+                    image_fields.append(name)
+                elif isinstance(feature, Sequence) and isinstance(getattr(feature, "feature", None), Image):
+                    image_fields.append(name)
+        except ImportError:
+            pass
+
+    if not image_fields:
+        # Heuristic based on the first example
+        sample = dataset[0]
+        for key, value in sample.items():
+            if _extract_image_resolutions(value):
+                image_fields.append(key)
+
+    # Preserve order but ensure uniqueness
+    seen = set()
+    ordered_fields = []
+    for field in image_fields:
+        if field not in seen:
+            ordered_fields.append(field)
+            seen.add(field)
+    return ordered_fields
+
+
+def _extract_image_resolutions(value: Any) -> List[Tuple[int, int]]:
+    """Extract image resolutions from various supported formats."""
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        PILImage = None
+
+    resolutions: List[Tuple[int, int]] = []
+
+    def _from_item(item: Any) -> None:
+        if item is None:
+            return
+
+        if PILImage and isinstance(item, PILImage.Image):
+            resolutions.append(item.size)
+            return
+
+        if isinstance(item, dict):
+            width = item.get("width")
+            height = item.get("height")
+            if isinstance(width, int) and isinstance(height, int):
+                resolutions.append((width, height))
+                return
+
+            # Nested image data
+            if "image" in item:
+                _from_item(item["image"])
+                return
+
+            if PILImage:
+                try:
+                    if "bytes" in item and isinstance(item["bytes"], (bytes, bytearray)):
+                        with PILImage.open(io.BytesIO(item["bytes"])) as img:
+                            resolutions.append(img.size)
+                        return
+                    if "path" in item and isinstance(item["path"], str):
+                        with PILImage.open(item["path"]) as img:
+                            resolutions.append(img.size)
+                        return
+                    if "file" in item and isinstance(item["file"], str):
+                        with PILImage.open(item["file"]) as img:
+                            resolutions.append(img.size)
+                        return
+                    if "data" in item and isinstance(item["data"], (bytes, bytearray)):
+                        with PILImage.open(io.BytesIO(item["data"])) as img:
+                            resolutions.append(img.size)
+                        return
+                except Exception:
+                    return
+
+        if isinstance(item, (list, tuple)):
+            for sub_item in item:
+                _from_item(sub_item)
+            return
+
+        size_attr = getattr(item, "size", None)
+        if isinstance(size_attr, tuple) and len(size_attr) == 2:
+            if all(isinstance(dim, int) for dim in size_attr):
+                resolutions.append(size_attr)
+                return
+
+        shape = getattr(item, "shape", None)
+        if isinstance(shape, tuple) and len(shape) >= 2:
+            height, width = shape[-2], shape[-1]
+            if isinstance(width, int) and isinstance(height, int):
+                resolutions.append((width, height))
+
+    _from_item(value)
+    return resolutions
+
+
+def _build_numeric_histogram(values: List[int], bins: int = 10) -> List[Dict[str, Any]]:
+    """Create an equal-width histogram for numeric values."""
+    if not values:
+        return []
+
+    min_val = min(values)
+    max_val = max(values)
+    if min_val == max_val:
+        return [{
+            "bin_start": min_val,
+            "bin_end": max_val,
+            "count": len(values),
+            "percentage": 1.0,
+        }]
+
+    span = max_val - min_val + 1
+    bin_size = max(1, math.ceil(span / bins))
+    histogram = []
+
+    for i in range(bins):
+        start = min_val + i * bin_size
+        end = min(start + bin_size - 1, max_val)
+        histogram.append({
+            "bin_start": start,
+            "bin_end": end,
+            "count": 0,
+            "percentage": 0.0,
+        })
+        if end == max_val:
+            break
+
+    total = len(values)
+    for value in values:
+        index = min((value - min_val) // bin_size, len(histogram) - 1)
+        histogram[index]["count"] += 1
+
+    for bucket in histogram:
+        if bucket["count"]:
+            bucket["percentage"] = round(bucket["count"] / total, 4)
+    return histogram
+
+
+def _generate_processing_stats(
+    dataset: Dataset,
+    tokenizer,
+    dataset_name: str,
+    token_column: str,
+) -> Optional[Dict[str, Any]]:
+    """Generate processing statistics for a dataset."""
+    if dataset is None or len(dataset) == 0:
+        return None
+
+    LOG.info(f"Computing processing statistics for {dataset_name} dataset ({len(dataset)} examples)...")
+
+    if token_column not in dataset.column_names:
+        raise ValueError(
+            f"Configured stats_token_field '{token_column}' not found in {dataset_name} dataset columns: {dataset.column_names}"
+        )
+
+    image_fields = _infer_image_fields(dataset)
+
+    token_lengths: List[int] = []
+    missing_token_examples = 0
+
+    image_resolution_counter: Counter[str] = Counter()
+    examples_with_images = 0
+
+    for example in dataset:
+        length = token_length_from_value(example.get(token_column), tokenizer)
+
+        if length is not None:
+            token_lengths.append(length)
+        else:
+            missing_token_examples += 1
+
+        example_resolutions: List[Tuple[int, int]] = []
+        for field in image_fields:
+            example_resolutions.extend(_extract_image_resolutions(example.get(field)))
+
+        if example_resolutions:
+            examples_with_images += 1
+            for width, height in example_resolutions:
+                image_resolution_counter[f"{width}x{height}"] += 1
+
+    stats: Dict[str, Any] = {
+        "num_examples": len(dataset),
+        "token_counts": {},
+        "image_resolutions": {},
+    }
+
+    if token_lengths:
+        stats["token_counts"] = {
+            "min": min(token_lengths),
+            "max": max(token_lengths),
+            "mean": round(statistics.mean(token_lengths), 2),
+            "median": round(statistics.median(token_lengths), 2),
+            "p95": round(statistics.quantiles(token_lengths, n=100)[94], 2) if len(token_lengths) >= 100 else None,
+            "histogram": _build_numeric_histogram(token_lengths),
+            "missing_examples": missing_token_examples,
+            "source_column": token_column,
+        }
+    else:
+        stats["token_counts"] = {
+            "histogram": [],
+            "missing_examples": len(dataset),
+            "source_column": token_column,
+        }
+
+    if image_resolution_counter:
+        total_images = sum(image_resolution_counter.values())
+        histogram = []
+        for resolution, count in image_resolution_counter.most_common():
+            entry = {
+                "resolution": resolution,
+                "count": count,
+                "percentage": round(count / total_images, 4),
+            }
+            histogram.append(entry)
+
+        stats["image_resolutions"] = {
+            "histogram": histogram,
+            "unique_resolutions": len(image_resolution_counter),
+            "examples_with_images": examples_with_images,
+            "fields": image_fields,
+        }
+    else:
+        stats["image_resolutions"] = {
+            "histogram": [],
+            "unique_resolutions": 0,
+            "examples_with_images": 0,
+            "fields": image_fields,
+        }
+
+    return stats
+
+
+def _write_processing_stats(
+    base_path: Path,
+    cfg: DictDefault,
+    tokenizer,
+    train_dataset: Optional[Dataset],
+    eval_dataset: Optional[Dataset],
+) -> None:
+    """Compute and persist processing statistics for the prepared datasets."""
+    try:
+        token_field = getattr(cfg, "stats_token_field", None)
+        if not token_field:
+            raise ValueError(
+                "stats_token_field must be provided in the config to generate processing statistics."
+            )
+
+        train_count = len(train_dataset) if train_dataset else 0
+        stats_payload: Dict[str, Any] = {
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "tokenizer": getattr(tokenizer, "name_or_path", None),
+            "base_model": getattr(cfg, "base_model", None),
+            "sequence_length": getattr(cfg, "sequence_len", None),
+            "model": getattr(cfg, "base_model", None),
+            "datasets": {},
+            "processed_samples": train_count,
+            "original_samples": train_count,
+            "success_rate": 1.0 if train_count else 0.0,
+        }
+
+        train_stats = (
+            _generate_processing_stats(train_dataset, tokenizer, "train", token_field)
+            if train_dataset
+            else None
+        )
+        if train_stats:
+            stats_payload["datasets"]["train"] = train_stats
+
+        eval_stats = (
+            _generate_processing_stats(eval_dataset, tokenizer, "eval", token_field)
+            if eval_dataset
+            else None
+        )
+        if eval_stats:
+            stats_payload["datasets"]["eval"] = eval_stats
+
+        if not stats_payload["datasets"]:
+            LOG.info("No processing statistics generated (no datasets available).")
+            return
+
+        stats_path = base_path / "processing_stats.json"
+        with stats_path.open("w", encoding="utf-8") as f:
+            json.dump(stats_payload, f, indent=2)
+
+        LOG.info(f"Saved processing statistics to {stats_path}")
+
+    except ValueError:
+        raise
+    except Exception as exc:
+        LOG.warning(f"Failed to generate processing statistics: {exc}")
 
 
 def load_dataset_with_subset(
@@ -328,7 +646,7 @@ def prepare_dataset(
         # Save dataset to disk if we have a prepared path
         if train_dataset and cfg.get("dataset_prepared_path"):
             prepared_ds_path = Path(cfg.dataset_prepared_path)
-            
+
             # Create a specific path based on dataset configuration
             tokenizer_name = cfg.get("tokenizer_config", "unknown").replace("/", "_")
             sequence_len = cfg.get("sequence_len", "unknown")
@@ -347,7 +665,10 @@ def prepare_dataset(
                 LOG.info(f"Saving eval dataset to disk... {eval_path}")
                 os.makedirs(eval_path, exist_ok=True)
                 eval_dataset.save_to_disk(str(eval_path))
-    
+
+            # Generate processing statistics (token counts, image resolutions, etc.)
+            _write_processing_stats(prepared_ds_path, cfg, tokenizer, train_dataset, eval_dataset)
+
     return train_dataset, eval_dataset, total_num_steps, prompters
 
 

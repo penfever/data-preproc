@@ -1,7 +1,10 @@
 """HuggingFace Datasets filter processor that preserves original structure."""
 
-from typing import Dict, Any, Optional, List
 import logging
+from typing import Any, Dict, List, Optional
+
+from data_preproc.utils.tokenization import token_length_from_value
+
 from . import DatasetProcessor, register_processor
 
 LOG = logging.getLogger(__name__)
@@ -24,6 +27,8 @@ class HFFilterProcessor(DatasetProcessor):
         self.max_image_size = config.get("max_image_size")
         self.min_image_size = config.get("min_image_size")
         self.tokenizer = config.get("tokenizer")  # Will be set by the caller
+        self.token_field = config.get("token_field")
+        self.force_recompute = config.get("force_recompute", False)
         
         # Text field extraction preferences
         self.text_fields = config.get("text_fields", ["problem", "solution", "question", "answer", "text", "content"])
@@ -57,29 +62,38 @@ class HFFilterProcessor(DatasetProcessor):
             
             # Check token length if tokenizer is available
             if self.tokenizer and (self.max_tokens or self.min_tokens):
-                text_content = self._extract_text_content(example)
-                if text_content:
-                    # Tokenize to check length
-                    tokens = self.tokenizer(text_content, add_special_tokens=False)
-                    token_count = len(tokens["input_ids"])
-                    
+                token_count: Optional[int] = None
+
+                if self.token_field:
+                    token_count = token_length_from_value(example.get(self.token_field), self.tokenizer)
+                    if token_count is None:
+                        LOG.debug(
+                            "Filtering: no token data found in field '%s'",
+                            self.token_field,
+                        )
+                else:
+                    text_content = self._extract_text_content(example)
+                    if text_content:
+                        tokens = self.tokenizer(text_content, add_special_tokens=False)
+                        token_count = len(tokens["input_ids"])
+
+                if token_count is None:
+                    LOG.debug("Filtering: no text content found")
+                    filter_stats['no_text_content'] += 1
+                    failed = True
+                    failure_count += 1
+                else:
                     if self.max_tokens and token_count > self.max_tokens:
                         LOG.debug(f"Filtering: token count {token_count} > {self.max_tokens}")
                         filter_stats['token_count_too_high'] += 1
                         failed = True
                         failure_count += 1
-                    
+
                     if self.min_tokens and token_count < self.min_tokens:
                         LOG.debug(f"Filtering: token count {token_count} < {self.min_tokens}")
                         filter_stats['token_count_too_low'] += 1
                         failed = True
                         failure_count += 1
-                else:
-                    # No text content found
-                    LOG.debug("Filtering: no text content found")
-                    filter_stats['no_text_content'] += 1
-                    failed = True
-                    failure_count += 1
             
             # Check image corruption
             if self.filter_corrupted_images and "image" in example:
@@ -109,10 +123,21 @@ class HFFilterProcessor(DatasetProcessor):
         # Apply the filter using HF Datasets .filter() method
         initial_count = len(dataset)
         LOG.info(f"🔍 HF Filter: Processing {initial_count} examples")
+        token_source_info: Any
+        if self.token_field:
+            token_source_info = self.token_field
+        else:
+            token_source_info = ", ".join(self.text_fields) if self.text_fields else "<none>"
         LOG.info(f"  Token limits: min={self.min_tokens}, max={self.max_tokens}")
+        LOG.info(f"  Token source: {token_source_info}")
+        LOG.info(f"  Force recompute: {self.force_recompute}")
         LOG.info(f"  Image checks: corrupted={self.filter_corrupted_images}, size_limits={bool(self.max_image_size or self.min_image_size)}")
         
-        filtered_dataset = dataset.filter(filter_function)
+        filter_kwargs = {}
+        if self.force_recompute:
+            filter_kwargs["load_from_cache_file"] = False
+
+        filtered_dataset = dataset.filter(filter_function, **filter_kwargs)
         final_count = len(filtered_dataset)
         filtered_count = initial_count - final_count
         

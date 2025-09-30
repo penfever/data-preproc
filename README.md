@@ -399,7 +399,7 @@ The data-preproc package includes a modular processor system for dataset transfo
 
 - **`passthrough`**: No-op testing processor (useful for debugging)
 - **`filter`**: Basic text length and field filtering
-- **`hf_filter`**: Filter datasets by token length, image constraints, and data quality
+- **`hf_filter`**: Filter datasets by token length, image constraints, and data quality (supports explicit `token_field` and `force_recompute` flags)
 - **`column_mapping`**: Simple column renaming
 - **`advanced_mapping`**: Transform and map dataset fields with complex transformations
 - **`multimodal_filter`**: Filter multimodal content (images, videos, audio)

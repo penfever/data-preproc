@@ -150,11 +150,18 @@ def load_datasets(
                 "model": cfg.base_model,
                 "sequence_length": cfg.sequence_len
             }
-            stats_path = actual_dataset_path.parent / "stats.json"
-            if stats_path.exists():
-                import json
-                with open(stats_path, 'r') as f:
-                    stats = json.load(f)
+            stats_candidates = [
+                actual_dataset_path.parent / "processing_stats.json",
+                actual_dataset_path / "processing_stats.json",
+                actual_dataset_path.parent / "stats.json",
+            ]
+
+            for stats_path in stats_candidates:
+                if stats_path.exists():
+                    import json
+                    with open(stats_path, 'r', encoding='utf-8') as f:
+                        stats = json.load(f)
+                    break
             
             LOG.info("Uploading dataset to HuggingFace Hub...")
             # Get token from CLI args, config, or environment
