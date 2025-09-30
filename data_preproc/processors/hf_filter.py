@@ -110,16 +110,14 @@ class HFFilterProcessor(DatasetProcessor):
             
             if not failed:
                 filter_stats['passed'] += 1
-            filter_stats["total_processed"] += 1
-
-            reasons = self._collect_failure_reasons(example)
-
-            if not reasons:
-                filter_stats["passed"] += 1
                 return True
 
-            filter_stats["filtered"] += 1
+            filter_stats['filtered'] += 1
+            reasons = self._collect_failure_reasons(example)
             filter_stats["reason_counts"].update(reasons)
+
+            if failure_count > 1:
+                filter_stats['multiple_failures'] += 1
 
             if len(reasons) > 1:
                 filter_stats["combo_counts"][tuple(sorted(reasons))] += 1
@@ -143,13 +141,6 @@ class HFFilterProcessor(DatasetProcessor):
             filter_kwargs["load_from_cache_file"] = False
 
         filtered_dataset = dataset.filter(filter_function, **filter_kwargs)
-        LOG.info(
-            "  Image checks: corrupted=%s, size_limits=%s",
-            self.filter_corrupted_images,
-            bool(self.max_image_size or self.min_image_size),
-        )
-
-        filtered_dataset = dataset.filter(filter_function)
         final_count = len(filtered_dataset)
         filtered_count = initial_count - final_count
 
@@ -193,6 +184,12 @@ class HFFilterProcessor(DatasetProcessor):
             "total_processed": 0,
             "passed": 0,
             "filtered": 0,
+            "token_count_too_low": 0,
+            "token_count_too_high": 0,
+            "no_text_content": 0,
+            "corrupted_image": 0,
+            "image_size_invalid": 0,
+            "multiple_failures": 0,
             "reason_counts": Counter(),
             "combo_counts": Counter(),
         }
