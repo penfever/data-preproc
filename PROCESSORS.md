@@ -16,6 +16,7 @@ Processors are modular components that transform datasets in configurable ways. 
 | `multimodal_filter` | Image/media filtering | ✅ Yes | `max_image_size`, `min_image_size`, `filter_corrupted_images` |
 | `qa_to_messages` | Convert Q&A to chat format | ❌ No | `question_field`, `answer_field` |
 | `hf_filter` | Token length & image filtering | ✅ Yes | `max_tokens`, `min_tokens`, `max_image_size`, `min_image_size` |
+| `tokenize` | Materialize tokenizer outputs (input IDs, masks) | ✅ Yes | `text_fields`, `output_field`, `attention_mask_field` |
 | `image_count_filter` | Filter by number of images | ✅ Yes | `min_images`, `max_images` |
 | `advanced_mapping` | Complex field transformations | ✅ Yes | `mappings`, `simple_mappings`, `keep_unmapped` |
 | `regex_transform` | Text regex transformations | ❌ No | `transformations`, `default_flags` |
@@ -158,6 +159,36 @@ processors:
 - `text_fields` (list, optional): List of fields to concatenate and tokenize for length checking
 
 **Note:** The `hf_filter` processor requires a tokenizer to check token lengths. It preserves the original dataset structure and only filters examples.
+
+#### `tokenize`
+Generates tokenized fields (e.g., `input_ids`, `attention_mask`) using the configured tokenizer before other processors run.
+
+```yaml
+processors:
+  - type: tokenize
+    text_fields: ["problem", "solution"]  # Source text columns to join
+    output_field: input_ids              # Column to write token IDs to (default)
+    attention_mask_field: attention_mask # Optional attention mask output (default)
+    add_special_tokens: false            # Whether to include special tokens (default: false)
+    truncation: true                     # Enable tokenizer truncation (optional)
+    max_length: 8192                     # Truncate to this length (optional)
+    padding: false                       # Tokenizer padding behaviour (optional)
+```
+
+**Parameters:**
+- `text_fields` (list, optional): Ordered list of columns whose contents are concatenated and tokenized (default: `['text']`).
+- `output_field` (str, optional): Column that will store the token IDs (default: `input_ids`).
+- `attention_mask_field` (str or null, optional): Column for the tokenizer generated attention mask. Set to `null` to skip storing a mask (default: `attention_mask`).
+- `add_special_tokens` (bool, optional): Whether to let the tokenizer append special tokens (default: `false`).
+- `truncation` (bool, optional): Passed through to the tokenizer to enable truncation (default: tokenizer default).
+- `max_length` (int, optional): Maximum sequence length when truncation is enabled.
+- `padding` (bool/str, optional): Padding behaviour forwarded to the tokenizer (default: `false`).
+- `join_with` (str, optional): Separator inserted between concatenated fields (default: blank line).
+- `skip_if_empty` (bool, optional): If `true`, leave examples without any source text unchanged instead of filtering them out (default: `true`).
+- `keep_text_fields` (bool, optional): Whether to keep the original text fields after tokenization (default: `true`).
+- `return_token_type_ids` (bool, optional): Store tokenizer-provided token type IDs when available (default: `false`).
+
+This processor is useful when downstream filters (e.g., `hf_filter`) or deduplication steps expect a pre-materialized `input_ids` column.
 
 #### `advanced_mapping`
 Performs complex field transformations including nested extraction, list filtering, and multi-target mapping.

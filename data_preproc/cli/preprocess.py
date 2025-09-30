@@ -46,9 +46,10 @@ def do_preprocess(cfg: DictDefault, cli_args: PreprocessCliArgs) -> None:
     # Ensure processor loggers are at INFO level minimum
     processor_loggers = [
         'data_preproc.processors.image_count_filter',
-        'data_preproc.processors.hf_filter', 
+        'data_preproc.processors.hf_filter',
         'data_preproc.processors.deduplicator',
         'data_preproc.processors.image_transform',
+        'data_preproc.processors.tokenize',
         'data_preproc.utils.data'
     ]
     
