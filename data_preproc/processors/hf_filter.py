@@ -1,7 +1,7 @@
 """HuggingFace Datasets filter processor that preserves original structure."""
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from data_preproc.utils.tokenization import token_length_from_value
 from collections import Counter
 
@@ -56,20 +56,12 @@ class HFFilterProcessor(DatasetProcessor):
             
             # Check token length if tokenizer is available
             if self.tokenizer and (self.max_tokens or self.min_tokens):
-                token_count: Optional[int] = None
-
-                if self.token_field:
-                    token_count = token_length_from_value(example.get(self.token_field), self.tokenizer)
-                    if token_count is None:
-                        LOG.debug(
-                            "Filtering: no token data found in field '%s'",
-                            self.token_field,
-                        )
-                else:
-                    text_content = self._extract_text_content(example)
-                    if text_content:
-                        tokens = self.tokenizer(text_content, add_special_tokens=False)
-                        token_count = len(tokens["input_ids"])
+                token_count, used_token_field = self._compute_token_count(example)
+                if self.token_field and not used_token_field and token_count is None:
+                    LOG.debug(
+                        "Filtering: token field '%s' missing or empty; falling back to text fields",
+                        self.token_field,
+                    )
 
                 if token_count is None:
                     LOG.debug("Filtering: no text content found")
@@ -112,6 +104,9 @@ class HFFilterProcessor(DatasetProcessor):
             filter_stats['filtered'] += 1
             reasons = self._collect_failure_reasons(example)
             filter_stats["reason_counts"].update(reasons)
+
+            if failure_count > 1:
+                filter_stats['multiple_failures'] += 1
 
             if len(reasons) > 1:
                 filter_stats["combo_counts"][tuple(sorted(reasons))] += 1
@@ -188,20 +183,34 @@ class HFFilterProcessor(DatasetProcessor):
             "combo_counts": Counter(),
         }
 
+    def _compute_token_count(self, example: Dict[str, Any]) -> Tuple[Optional[int], bool]:
+        """Return token count using token_field when available, falling back to text fields."""
+        if not self.tokenizer:
+            return None, False
+
+        token_count: Optional[int] = None
+        used_token_field = False
+
+        if self.token_field:
+            token_value = example.get(self.token_field)
+            if token_value is not None:
+                token_count = token_length_from_value(token_value, self.tokenizer)
+                used_token_field = token_count is not None
+
+        if token_count is None:
+            text_content = self._extract_text_content(example)
+            if text_content:
+                tokens = self.tokenizer(text_content, add_special_tokens=False)
+                token_count = len(tokens["input_ids"])
+
+        return token_count, used_token_field
+
     def _collect_failure_reasons(self, example: Dict[str, Any]) -> List[str]:
         """Determine which filter reasons apply to the example."""
         reasons: List[str] = []
 
         if self.tokenizer and (self.max_tokens or self.min_tokens):
-            token_count: Optional[int] = None
-
-            if self.token_field:
-                token_count = token_length_from_value(example.get(self.token_field), self.tokenizer)
-            else:
-                text_content = self._extract_text_content(example)
-                if text_content:
-                    tokens = self.tokenizer(text_content, add_special_tokens=False)
-                    token_count = len(tokens["input_ids"])
+            token_count, _ = self._compute_token_count(example)
 
             if token_count is None:
                 LOG.debug("Filtering: no text content found")
@@ -245,6 +254,7 @@ class HFFilterProcessor(DatasetProcessor):
             stats["filtered"] += 1
             stats["reason_counts"].update(reasons)
             if len(reasons) > 1:
+                stats["multiple_failures"] += 1
                 stats["combo_counts"][tuple(sorted(reasons))] += 1
 
         return stats
