@@ -584,13 +584,13 @@ def prepare_dataset(
                             proc = get_processor(proc_type, proc_config)
                             proc_identifier = proc_type
                         
-                        # Provide tokenizer to processors that expect it
-                        if tokenizer is not None and hasattr(proc, "tokenizer"):
-                            if getattr(proc, "tokenizer", None) is None:
-                                proc.tokenizer = tokenizer
-                        
-                        initial_count = len(ds)
-                        LOG.info(f"")
+                            # Provide tokenizer to processors that expect it
+                            if tokenizer is not None and hasattr(proc, "tokenizer"):
+                                if getattr(proc, "tokenizer", None) is None:
+                                    proc.tokenizer = tokenizer
+                            
+                            initial_count = len(ds)
+                            LOG.info(f"")
                             LOG.info(f"🔄 Processing Stage {proc_index + 1}/{len(dataset_config.get('processors', []))}: {proc_identifier}")
                             LOG.info(f"   Input: {initial_count} examples")
                             
@@ -627,7 +627,7 @@ def prepare_dataset(
                                         LOG.error("Suggestion: Check min_images/max_images settings and image field names.")
                                     
                                     raise ValueError(f"All examples filtered out by {proc_identifier} processor. Check processor configuration and input data.")
-                    
+                
                     # Log processor pipeline summary
                     if "processors" in dataset_config:
                         final_dataset_count = len(ds)
