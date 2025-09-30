@@ -9,8 +9,9 @@ import os
 import statistics
 from collections import Counter
 from datetime import datetime
+import re
+from typing import Optional, Tuple, List, Any, Dict, Union
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, get_dataset_config_names, load_dataset
 
@@ -330,6 +331,48 @@ def _write_processing_stats(
         raise
     except Exception as exc:
         LOG.warning(f"Failed to generate processing statistics: {exc}")
+def _sanitize_name_component(value: Union[str, int, None]) -> str:
+    """Return a filesystem-friendly component derived from an arbitrary value."""
+
+    if value is None:
+        return "unknown"
+
+    text = str(value).strip()
+    if not text:
+        return "unknown"
+
+    text = text.replace(os.sep, "_").replace("/", "_")
+    sanitized = re.sub(r"[^A-Za-z0-9._-]+", "_", text)
+    sanitized = re.sub(r"_+", "_", sanitized)
+    sanitized = sanitized.strip("_")
+    return sanitized or "unknown"
+
+
+def _derive_prepared_dataset_base_name(cfg: DictDefault) -> str:
+    """Compute the base directory name for prepared datasets."""
+
+    custom_name = cfg.get("prepared_dataset_name")
+    if custom_name:
+        return _sanitize_name_component(custom_name)
+
+    datasets_cfg = cfg.get("datasets") or []
+    dataset_identifier = "dataset"
+    if isinstance(datasets_cfg, list) and datasets_cfg:
+        primary_dataset = datasets_cfg[0] or {}
+        dataset_identifier = (
+            primary_dataset.get("name")
+            or primary_dataset.get("path")
+            or dataset_identifier
+        )
+        if len(datasets_cfg) > 1:
+            dataset_identifier = f"{dataset_identifier}_plus{len(datasets_cfg) - 1}"
+
+    dataset_component = _sanitize_name_component(dataset_identifier)
+    tokenizer_raw = cfg.get("tokenizer_config", "unknown")
+    tokenizer_component = _sanitize_name_component(str(tokenizer_raw).replace("/", "_"))
+    sequence_component = _sanitize_name_component(cfg.get("sequence_len", "unknown"))
+
+    return f"{dataset_component}_{tokenizer_component}_{sequence_component}"
 
 
 def load_dataset_with_subset(
@@ -648,12 +691,11 @@ def prepare_dataset(
             prepared_ds_path = Path(cfg.dataset_prepared_path)
 
             # Create a specific path based on dataset configuration
-            tokenizer_name = cfg.get("tokenizer_config", "unknown").replace("/", "_")
-            sequence_len = cfg.get("sequence_len", "unknown")
+            prepared_base_name = _derive_prepared_dataset_base_name(cfg)
             split_name = "train"
-            
+
             # Build the full path
-            full_path = prepared_ds_path / f"{split_name}_{tokenizer_name}_{sequence_len}"
+            full_path = prepared_ds_path / f"{split_name}_{prepared_base_name}"
             
             LOG.info(f"Saving merged prepared dataset to disk... {full_path}")
             os.makedirs(full_path, exist_ok=True)
@@ -661,7 +703,7 @@ def prepare_dataset(
             
             # Also save eval dataset if it exists
             if eval_dataset:
-                eval_path = prepared_ds_path / f"eval_{tokenizer_name}_{sequence_len}"
+                eval_path = prepared_ds_path / f"eval_{prepared_base_name}"
                 LOG.info(f"Saving eval dataset to disk... {eval_path}")
                 os.makedirs(eval_path, exist_ok=True)
                 eval_dataset.save_to_disk(str(eval_path))

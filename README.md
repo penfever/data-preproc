@@ -65,8 +65,10 @@ data-preproc --config configs/example/example_config.yaml
 # Vision-language preprocessing
 data-preproc --config configs/example/example_vl_config.yaml
 
-# With custom output path
-data-preproc --config config.yaml --dataset_prepared_path ./preprocessed_data
+# With custom output path and name
+data-preproc --config config.yaml \
+  --dataset_prepared_path ./preprocessed_data \
+  --prepared_dataset_name custom_run
 
 # Debug mode with sample outputs
 data-preproc --config config.yaml --debug --debug_num_examples 5
@@ -77,6 +79,7 @@ data-preproc --config config.yaml --hf_token "your_token"
 # Override config values using dot notation
 data-preproc --config config.yaml \
   --dataset_prepared_path /custom/output \
+  --prepared_dataset_name custom_run \
   --sequence_len 4096 \
   --batch_size 8
 ```
@@ -127,6 +130,7 @@ sequence_len: 2048
 
 # Output directory
 dataset_prepared_path: "./data/prepared"
+# prepared_dataset_name: "alpaca_run"
 
 # Dataset configuration - supports both HuggingFace repos and local files
 datasets:
@@ -202,6 +206,7 @@ sequence_len: 2048
 
 # Output directory
 dataset_prepared_path: "./data/prepared_vl"
+# prepared_dataset_name: "vl_sample_run"
 
 # Vision Language dataset configuration
 datasets:
