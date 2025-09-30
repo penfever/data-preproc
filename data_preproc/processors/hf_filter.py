@@ -105,9 +105,6 @@ class HFFilterProcessor(DatasetProcessor):
                     failed = True
                     failure_count += 1
             
-            if failure_count > 1:
-                filter_stats['multiple_failures'] += 1
-            
             if not failed:
                 filter_stats['passed'] += 1
                 return True
@@ -115,9 +112,6 @@ class HFFilterProcessor(DatasetProcessor):
             filter_stats['filtered'] += 1
             reasons = self._collect_failure_reasons(example)
             filter_stats["reason_counts"].update(reasons)
-
-            if failure_count > 1:
-                filter_stats['multiple_failures'] += 1
 
             if len(reasons) > 1:
                 filter_stats["combo_counts"][tuple(sorted(reasons))] += 1
@@ -199,11 +193,20 @@ class HFFilterProcessor(DatasetProcessor):
         reasons: List[str] = []
 
         if self.tokenizer and (self.max_tokens or self.min_tokens):
-            text_content = self._extract_text_content(example)
-            if text_content:
-                tokens = self.tokenizer(text_content, add_special_tokens=False)
-                token_count = len(tokens["input_ids"])
+            token_count: Optional[int] = None
 
+            if self.token_field:
+                token_count = token_length_from_value(example.get(self.token_field), self.tokenizer)
+            else:
+                text_content = self._extract_text_content(example)
+                if text_content:
+                    tokens = self.tokenizer(text_content, add_special_tokens=False)
+                    token_count = len(tokens["input_ids"])
+
+            if token_count is None:
+                LOG.debug("Filtering: no text content found")
+                reasons.append("no_text_content")
+            else:
                 if self.max_tokens and token_count > self.max_tokens:
                     LOG.debug("Filtering: token count %s > %s", token_count, self.max_tokens)
                     reasons.append("token_count_too_high")
@@ -211,9 +214,6 @@ class HFFilterProcessor(DatasetProcessor):
                 if self.min_tokens and token_count < self.min_tokens:
                     LOG.debug("Filtering: token count %s < %s", token_count, self.min_tokens)
                     reasons.append("token_count_too_low")
-            else:
-                LOG.debug("Filtering: no text content found")
-                reasons.append("no_text_content")
 
         if self.filter_corrupted_images and "image" in example:
             if not self._validate_image(example["image"]):
