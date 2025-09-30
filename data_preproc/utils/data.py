@@ -581,11 +581,16 @@ def prepare_dataset(
                                 if not proc_type:
                                     LOG.error(f"Processor configuration missing 'type' field: {proc_config}")
                                     continue
-                                proc = get_processor(proc_type, proc_config)
-                                proc_identifier = proc_type
-                            
-                            initial_count = len(ds)
-                            LOG.info(f"")
+                            proc = get_processor(proc_type, proc_config)
+                            proc_identifier = proc_type
+                        
+                        # Provide tokenizer to processors that expect it
+                        if tokenizer is not None and hasattr(proc, "tokenizer"):
+                            if getattr(proc, "tokenizer", None) is None:
+                                proc.tokenizer = tokenizer
+                        
+                        initial_count = len(ds)
+                        LOG.info(f"")
                             LOG.info(f"🔄 Processing Stage {proc_index + 1}/{len(dataset_config.get('processors', []))}: {proc_identifier}")
                             LOG.info(f"   Input: {initial_count} examples")
                             
