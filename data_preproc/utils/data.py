@@ -590,60 +590,43 @@ def prepare_dataset(
                                 proc.tokenizer = tokenizer
                         
                         initial_count = len(ds)
-                        LOG.info("")
-                        LOG.info(
-                            f"🔄 Processing Stage {proc_index + 1}/{len(dataset_config.get('processors', []))}: {proc_identifier}"
-                        )
-                        LOG.info(f"   Input: {initial_count} examples")
-
-                        # Special handling for HF filter processor
-                        if hasattr(proc, 'apply_to_dataset'):
-                            ds = proc.apply_to_dataset(ds)
-                            final_count = len(ds)
-                            filtered_count = initial_count - final_count
-                            filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
-                            LOG.info(
-                                f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)"
-                            )
-                        # Special handling for sample_packer processor
-                        elif hasattr(proc, 'process_dataset'):
-                            ds = proc.process_dataset(ds)
-                            final_count = len(ds)
-                            LOG.info(
-                                f"   Output: {final_count} packed examples from {initial_count} original examples"
-                            )
-                        else:
-                            # Apply standard processor with streaming/batched processing
-                            ds = _apply_processor_streaming(ds, proc, proc_identifier, error_handler)
-                            if ds is not None:
+                        LOG.info(f"")
+                            LOG.info(f"🔄 Processing Stage {proc_index + 1}/{len(dataset_config.get('processors', []))}: {proc_identifier}")
+                            LOG.info(f"   Input: {initial_count} examples")
+                            
+                            # Special handling for HF filter processor
+                            if hasattr(proc, 'apply_to_dataset'):
+                                proc.tokenizer = tokenizer
+                                ds = proc.apply_to_dataset(ds)
                                 final_count = len(ds)
                                 filtered_count = initial_count - final_count
                                 filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
-                                LOG.info(
-                                    f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)"
-                                )
+                                LOG.info(f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)")
+                            # Special handling for sample_packer processor
+                            elif hasattr(proc, 'process_dataset'):
+                                ds = proc.process_dataset(ds)
+                                final_count = len(ds)
+                                LOG.info(f"   Output: {final_count} packed examples from {initial_count} original examples")
                             else:
-                                LOG.error(
-                                    f"❌ All {initial_count} examples filtered out by {proc_identifier} processor for dataset {dataset_path}"
-                                )
-
-                                # Provide helpful suggestions based on processor type
-                                if proc_type == "hf_filter":
-                                    LOG.error(
-                                        "Suggestion: Check min_tokens/max_tokens settings. Use --debug to see token counts per example."
-                                    )
-                                elif proc_type == "advanced_mapping":
-                                    LOG.error(
-                                        "Suggestion: Check mapping configuration and required fields. Use --debug to see transformation details."
-                                    )
-                                elif proc_type == "image_count_filter":
-                                    LOG.error(
-                                        "Suggestion: Check min_images/max_images settings and image field names."
-                                    )
-
-                                raise ValueError(
-                                    f"All examples filtered out by {proc_identifier} processor. Check processor configuration and input data."
-                                )
+                                # Apply standard processor with streaming/batched processing
+                                ds = _apply_processor_streaming(ds, proc, proc_identifier, error_handler)
+                                if ds is not None:
+                                    final_count = len(ds)
+                                    filtered_count = initial_count - final_count
+                                    filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
+                                    LOG.info(f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)")
+                                else:
+                                    LOG.error(f"❌ All {initial_count} examples filtered out by {proc_identifier} processor for dataset {dataset_path}")
+                                    
+                                    # Provide helpful suggestions based on processor type
+                                    if proc_type == "hf_filter":
+                                        LOG.error("Suggestion: Check min_tokens/max_tokens settings. Use --debug to see token counts per example.")
+                                    elif proc_type == "advanced_mapping":
+                                        LOG.error("Suggestion: Check mapping configuration and required fields. Use --debug to see transformation details.")
+                                    elif proc_type == "image_count_filter":
+                                        LOG.error("Suggestion: Check min_images/max_images settings and image field names.")
+                                    
+                                    raise ValueError(f"All examples filtered out by {proc_identifier} processor. Check processor configuration and input data.")
                     
                     # Log processor pipeline summary
                     if "processors" in dataset_config:
