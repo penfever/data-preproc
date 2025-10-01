@@ -37,7 +37,22 @@ def _feature_repr(features: Optional[Any]) -> Dict[str, str]:
     except AttributeError:
         return {}
 
-    return {name: repr(feature) for name, feature in items}
+    summary: Dict[str, str] = {}
+    for name, feature in items:
+        feature_type = feature.__class__.__name__
+        detail = ""
+
+        if hasattr(feature, "dtype"):
+            detail = f"dtype={feature.dtype}"
+        elif hasattr(feature, "feature"):
+            detail = f"feature={feature.feature.__class__.__name__}"
+
+        rendered = f"{feature_type}({detail})" if detail else feature_type
+        if len(rendered) > 120:
+            rendered = rendered[:117] + "..."
+        summary[name] = rendered
+
+    return summary
 
 
 def _log_feature_changes(
