@@ -28,43 +28,26 @@ class TokenizeProcessor(DatasetProcessor):
         self.tokenizer = config.get("tokenizer")  # Will be provided by framework
 
     def process_example(self, example: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Single-example helper used only for map()."""
         if not hasattr(self, "tokenizer") or self.tokenizer is None:
             raise ValueError(
                 "Tokenizer not available for TokenizeProcessor. Ensure pipeline loads one before running."
             )
 
-        collected_text = self._collect_text_from_example(example)
+        text = self._collect_text_from_example(example)
 
-        if not collected_text:
-            if self.skip_if_empty:
-                return example
-            raise ValueError("No text content available for tokenization")
+        if not text and self.skip_if_empty:
+            text = ""
 
-        encoding_kwargs = {
-            "add_special_tokens": self.add_special_tokens,
-            "return_attention_mask": self.attention_mask_field is not None,
-        }
+        encoding = self._tokenize_texts([text])
 
-        if self.truncation is not None:
-            encoding_kwargs["truncation"] = self.truncation
-        if self.max_length is not None:
-            encoding_kwargs["max_length"] = self.max_length
-        if self.padding:
-            encoding_kwargs["padding"] = self.padding
-        if self.return_token_type_ids:
-            encoding_kwargs["return_token_type_ids"] = True
+        example[self.output_field] = encoding[self.output_field][0]
 
-        encoding = self.tokenizer(collected_text, **encoding_kwargs)
-
-        example[self.output_field] = self._ensure_flat_list(encoding["input_ids"])
-
-        if self.attention_mask_field and "attention_mask" in encoding:
-            example[self.attention_mask_field] = self._ensure_flat_list(
-                encoding["attention_mask"]
-            )
+        if self.attention_mask_field and self.attention_mask_field in encoding:
+            example[self.attention_mask_field] = encoding[self.attention_mask_field][0]
 
         if self.return_token_type_ids and "token_type_ids" in encoding:
-            example["token_type_ids"] = self._ensure_flat_list(encoding["token_type_ids"])
+            example["token_type_ids"] = encoding["token_type_ids"][0]
 
         if not self.keep_text_fields:
             for field in self.text_fields:
@@ -85,12 +68,27 @@ class TokenizeProcessor(DatasetProcessor):
                 field for field in self.text_fields if field in dataset.column_names
             ]
 
-        def map_fn(example: Dict[str, Any]) -> Dict[str, Any]:
-            processed = self.process_example(example.copy())
-            return processed
+        def map_fn(batch: Dict[str, List[Any]]) -> Dict[str, Any]:
+            size = self._batch_size(batch)
+            texts = [self._collect_text_from_batch(batch, idx) for idx in range(size)]
+
+            encoding = self._tokenize_texts(texts)
+
+            result: Dict[str, Any] = {
+                self.output_field: encoding[self.output_field],
+            }
+
+            if self.attention_mask_field and self.attention_mask_field in encoding:
+                result[self.attention_mask_field] = encoding[self.attention_mask_field]
+
+            if self.return_token_type_ids and "token_type_ids" in encoding:
+                result["token_type_ids"] = encoding["token_type_ids"]
+
+            return result
 
         mapped_dataset = dataset.map(
             map_fn,
+            batched=True,
             desc="Tokenizing examples",
             remove_columns=remove_columns if remove_columns else None,
         )
@@ -101,20 +99,76 @@ class TokenizeProcessor(DatasetProcessor):
         parts: List[str] = []
         for field in self.text_fields:
             value = example.get(field)
-            if value is None:
+            text = self._normalize_text_value(value)
+            if text:
+                parts.append(text)
+
+        return self.join_with.join(parts).strip()
+
+    def _collect_text_from_batch(self, batch: Dict[str, List[Any]], index: int) -> str:
+        parts: List[str] = []
+        for field in self.text_fields:
+            column = batch.get(field)
+            if column is None:
                 continue
+            value = column[index]
+            text = self._normalize_text_value(value)
+            if text:
+                parts.append(text)
 
-            if isinstance(value, str):
-                if value:
-                    parts.append(value)
-            elif isinstance(value, list):
-                string_parts = [str(item) for item in value if isinstance(item, str)]
-                if string_parts:
-                    parts.append(self.join_with.join(string_parts))
-            else:
-                parts.append(str(value))
+        return self.join_with.join(parts).strip()
 
-        return self.join_with.join(part for part in parts if part).strip()
+    def _normalize_text_value(self, value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            string_parts = [
+                item for item in value if isinstance(item, str) and item is not None
+            ]
+            return self.join_with.join(string_parts)
+        return str(value)
+
+    def _tokenize_texts(self, texts: List[str]) -> Dict[str, List[List[int]]]:
+        encoding_kwargs = {
+            "add_special_tokens": self.add_special_tokens,
+            "return_attention_mask": self.attention_mask_field is not None,
+        }
+
+        if self.truncation is not None:
+            encoding_kwargs["truncation"] = self.truncation
+        if self.max_length is not None:
+            encoding_kwargs["max_length"] = self.max_length
+        if self.padding:
+            encoding_kwargs["padding"] = self.padding
+        if self.return_token_type_ids:
+            encoding_kwargs["return_token_type_ids"] = True
+
+        encoding = self.tokenizer(texts, **encoding_kwargs)
+
+        result: Dict[str, List[List[int]]] = {
+            self.output_field: [self._ensure_flat_list(ids) for ids in encoding["input_ids"]]
+        }
+
+        if self.attention_mask_field and "attention_mask" in encoding:
+            result[self.attention_mask_field] = [
+                self._ensure_flat_list(mask) for mask in encoding["attention_mask"]
+            ]
+
+        if self.return_token_type_ids and "token_type_ids" in encoding:
+            result["token_type_ids"] = [
+                self._ensure_flat_list(tt_ids) for tt_ids in encoding["token_type_ids"]
+            ]
+
+        return result
+
+    @staticmethod
+    def _batch_size(batch: Dict[str, List[Any]]) -> int:
+        for value in batch.values():
+            if isinstance(value, list):
+                return len(value)
+        return 0
 
     @staticmethod
     def _ensure_flat_list(value: Any) -> List[int]:
