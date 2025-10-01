@@ -227,6 +227,12 @@ class ImageTransformProcessor(DatasetProcessor):
                             field,
                             cast_error,
                         )
+                    else:
+                        LOG.debug(
+                            "Column '%s' cast to Image feature (%s)",
+                            field,
+                            transformed_dataset.features[field].__class__.__name__,
+                        )
 
         final_count = len(transformed_dataset)
         

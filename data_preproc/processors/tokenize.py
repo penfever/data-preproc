@@ -1,8 +1,19 @@
 """Processor that materializes tokenized fields using the configured tokenizer."""
 
+import logging
 from typing import Any, Dict, List, Optional
 
 from . import DatasetProcessor, register_processor
+
+
+try:
+    from datasets.features import Sequence, Value
+    HAS_DATASETS_SEQUENCE = True
+except ImportError:
+    HAS_DATASETS_SEQUENCE = False
+
+
+LOG = logging.getLogger(__name__)
 
 
 class TokenizeProcessor(DatasetProcessor):
@@ -24,6 +35,9 @@ class TokenizeProcessor(DatasetProcessor):
         self.skip_if_empty: bool = config.get("skip_if_empty", True)
         self.keep_text_fields: bool = config.get("keep_text_fields", True)
         self.return_token_type_ids: bool = config.get("return_token_type_ids", False)
+        self.input_dtype: str = config.get("input_dtype", "int32")
+        self.attention_dtype: str = config.get("attention_dtype", "int8")
+        self.token_type_dtype: str = config.get("token_type_dtype", "int32")
 
         self.tokenizer = config.get("tokenizer")  # Will be provided by framework
 
@@ -92,6 +106,9 @@ class TokenizeProcessor(DatasetProcessor):
             desc="Tokenizing examples",
             remove_columns=remove_columns if remove_columns else None,
         )
+
+        if HAS_DATASETS_SEQUENCE:
+            mapped_dataset = self._cast_sequence_columns(mapped_dataset)
 
         return mapped_dataset
 
@@ -175,6 +192,53 @@ class TokenizeProcessor(DatasetProcessor):
         if isinstance(value, list) and value and isinstance(value[0], list):
             return value[0]
         return list(value) if isinstance(value, (list, tuple)) else [int(value)]
+
+    def _cast_sequence_columns(self, dataset):
+        if self.output_field in dataset.column_names:
+            try:
+                dataset = dataset.cast_column(
+                    self.output_field, Sequence(Value(self.input_dtype))
+                )
+            except Exception as error:
+                LOG.debug(
+                    "Could not cast column '%s' to Sequence(Value('%s')): %s",
+                    self.output_field,
+                    self.input_dtype,
+                    error,
+                )
+
+        if (
+            self.attention_mask_field
+            and self.attention_mask_field in dataset.column_names
+        ):
+            try:
+                dataset = dataset.cast_column(
+                    self.attention_mask_field, Sequence(Value(self.attention_dtype))
+                )
+            except Exception as error:
+                LOG.debug(
+                    "Could not cast column '%s' to Sequence(Value('%s')): %s",
+                    self.attention_mask_field,
+                    self.attention_dtype,
+                    error,
+                )
+
+        if (
+            self.return_token_type_ids
+            and "token_type_ids" in dataset.column_names
+        ):
+            try:
+                dataset = dataset.cast_column(
+                    "token_type_ids", Sequence(Value(self.token_type_dtype))
+                )
+            except Exception as error:
+                LOG.debug(
+                    "Could not cast column 'token_type_ids' to Sequence(Value('%s')): %s",
+                    self.token_type_dtype,
+                    error,
+                )
+
+        return dataset
 
     def get_required_columns(self) -> List[str]:
         # Allow processor to run even if some fields are missing; _collect_text handles it.

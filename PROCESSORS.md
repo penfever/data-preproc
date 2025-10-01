@@ -187,6 +187,9 @@ processors:
 - `skip_if_empty` (bool, optional): If `true`, leave examples without any source text unchanged instead of filtering them out (default: `true`).
 - `keep_text_fields` (bool, optional): Whether to keep the original text fields after tokenization (default: `true`).
 - `return_token_type_ids` (bool, optional): Store tokenizer-provided token type IDs when available (default: `false`).
+- `input_dtype` (str, optional): Arrow dtype for `input_ids` when recasting to `Sequence(Value(...))` (default: `int32`).
+- `attention_dtype` (str, optional): Arrow dtype for the attention mask (default: `int8`).
+- `token_type_dtype` (str, optional): Arrow dtype for `token_type_ids` if present (default: `int32`).
 
 This processor is useful when downstream filters (e.g., `hf_filter`) or deduplication steps expect a pre-materialized `input_ids` column.
 
