@@ -1,7 +1,9 @@
 """Image transformation processor with torchvision-style transforms."""
 
+import base64
 import logging
 import math
+import os
 from typing import Dict, Any, List, Optional, Union, Tuple
 from copy import deepcopy
 
@@ -507,11 +509,25 @@ class ImageTransformProcessor(DatasetProcessor):
         
         # Handle file-like objects or paths
         if isinstance(image, str):
+            # Treat as filesystem path if it exists
+            if os.path.exists(image):
+                try:
+                    return Image.open(image)
+                except Exception as e:
+                    LOG.warning(f"Failed to open image from path '{image}': {e}")
+                    raise ValueError(f"Cannot open image from path: {e}")
+
+            # Try to interpret as base64-encoded data
             try:
-                return Image.open(image)
-            except Exception as e:
-                LOG.warning(f"Failed to open image from path '{image}': {e}")
-                raise ValueError(f"Cannot open image from path: {e}")
+                decoded = base64.b64decode(image, validate=True)
+                import io
+
+                return Image.open(io.BytesIO(decoded))
+            except Exception:
+                LOG.debug("String value could not be decoded as base64 image data")
+
+            LOG.warning("Cannot interpret string image value; expected file path or base64 data")
+            raise ValueError("Cannot interpret string image value as image data")
         
         if HAS_TORCHVISION and hasattr(image, "shape"):
             try:
