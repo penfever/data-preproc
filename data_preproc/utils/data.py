@@ -29,6 +29,51 @@ from data_preproc.utils.tokenization import token_length_from_value
 LOG = logging.getLogger(__name__)
 
 
+def _feature_repr(features: Optional[Any]) -> Dict[str, str]:
+    if not features:
+        return {}
+    try:
+        items = features.items()
+    except AttributeError:
+        return {}
+
+    return {name: repr(feature) for name, feature in items}
+
+
+def _log_feature_changes(
+    prev_features: Optional[Any], new_features: Optional[Any], proc_identifier: str
+) -> None:
+    prev_map = _feature_repr(prev_features)
+    new_map = _feature_repr(new_features)
+
+    if not prev_map and not new_map:
+        return
+
+    changes_detected = False
+
+    for column, new_def in new_map.items():
+        if column not in prev_map:
+            LOG.info(
+                f"   🔹 Feature added by {proc_identifier}: {column} -> {new_def}"
+            )
+            changes_detected = True
+        elif prev_map[column] != new_def:
+            LOG.info(
+                f"   🔄 Feature updated by {proc_identifier}: {column}: {prev_map[column]} -> {new_def}"
+            )
+            changes_detected = True
+
+    for column, old_def in prev_map.items():
+        if column not in new_map:
+            LOG.info(
+                f"   ❗ Feature removed by {proc_identifier}: {column} (was {old_def})"
+            )
+            changes_detected = True
+
+    if not changes_detected:
+        LOG.debug(f"   Features unchanged after {proc_identifier}")
+
+
 def _infer_image_fields(dataset: Dataset) -> List[str]:
     """Identify columns that contain image data."""
     if not dataset or len(dataset) == 0:
@@ -574,59 +619,111 @@ def prepare_dataset(
                                 proc = create_processor(proc_config)
                                 proc_type = proc_config.get("type", "unknown")
                                 proc_name = proc_config.get("name", proc_type)
-                                proc_identifier = f"{proc_name} ({proc_type})" if proc_name != proc_type else proc_type
+                                proc_identifier = (
+                                    f"{proc_name} ({proc_type})"
+                                    if proc_name and proc_name != proc_type
+                                    else proc_type
+                                )
                             except (ValueError, KeyError):
                                 # Fall back to old format for backward compatibility
                                 proc_type = proc_config.get("type")
                                 if not proc_type:
-                                    LOG.error(f"Processor configuration missing 'type' field: {proc_config}")
+                                    LOG.error(
+                                        f"Processor configuration missing 'type' field: {proc_config}"
+                                    )
                                     continue
-                            proc = get_processor(proc_type, proc_config)
-                            proc_identifier = proc_type
-                        
+                                proc = get_processor(proc_type, proc_config)
+                                proc_identifier = proc_type
+
                             # Provide tokenizer to processors that expect it
                             if tokenizer is not None and hasattr(proc, "tokenizer"):
                                 if getattr(proc, "tokenizer", None) is None:
                                     proc.tokenizer = tokenizer
-                            
+
                             initial_count = len(ds)
-                            LOG.info(f"")
-                            LOG.info(f"🔄 Processing Stage {proc_index + 1}/{len(dataset_config.get('processors', []))}: {proc_identifier}")
+                            prev_features = getattr(ds, "features", None)
+                            LOG.info("")
+                            LOG.info(
+                                "🔄 Processing Stage %s/%s: %s",
+                                proc_index + 1,
+                                len(dataset_config.get("processors", [])),
+                                proc_identifier,
+                            )
                             LOG.info(f"   Input: {initial_count} examples")
-                            
+
                             # Special handling for HF filter processor
-                            if hasattr(proc, 'apply_to_dataset'):
-                                proc.tokenizer = tokenizer
+                            if hasattr(proc, "apply_to_dataset"):
                                 ds = proc.apply_to_dataset(ds)
                                 final_count = len(ds)
                                 filtered_count = initial_count - final_count
-                                filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
-                                LOG.info(f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)")
+                                filter_rate = (
+                                    (filtered_count / initial_count * 100)
+                                    if initial_count > 0
+                                    else 0
+                                )
+                                LOG.info(
+                                    f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)"
+                                )
+                                _log_feature_changes(
+                                    prev_features,
+                                    getattr(ds, "features", None),
+                                    proc_identifier,
+                                )
                             # Special handling for sample_packer processor
-                            elif hasattr(proc, 'process_dataset'):
+                            elif hasattr(proc, "process_dataset"):
                                 ds = proc.process_dataset(ds)
                                 final_count = len(ds)
-                                LOG.info(f"   Output: {final_count} packed examples from {initial_count} original examples")
+                                LOG.info(
+                                    f"   Output: {final_count} packed examples from {initial_count} original examples"
+                                )
+                                _log_feature_changes(
+                                    prev_features,
+                                    getattr(ds, "features", None),
+                                    proc_identifier,
+                                )
                             else:
                                 # Apply standard processor with streaming/batched processing
-                                ds = _apply_processor_streaming(ds, proc, proc_identifier, error_handler)
+                                ds = _apply_processor_streaming(
+                                    ds, proc, proc_identifier, error_handler
+                                )
                                 if ds is not None:
                                     final_count = len(ds)
                                     filtered_count = initial_count - final_count
-                                    filter_rate = (filtered_count / initial_count * 100) if initial_count > 0 else 0
-                                    LOG.info(f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)")
+                                    filter_rate = (
+                                        (filtered_count / initial_count * 100)
+                                        if initial_count > 0
+                                        else 0
+                                    )
+                                    LOG.info(
+                                        f"   Output: {final_count} examples ({filtered_count} filtered, {filter_rate:.1f}% reduction)"
+                                    )
+                                    _log_feature_changes(
+                                        prev_features,
+                                        getattr(ds, "features", None),
+                                        proc_identifier,
+                                    )
                                 else:
-                                    LOG.error(f"❌ All {initial_count} examples filtered out by {proc_identifier} processor for dataset {dataset_path}")
-                                    
+                                    LOG.error(
+                                        f"❌ All {initial_count} examples filtered out by {proc_identifier} processor for dataset {dataset_path}"
+                                    )
+
                                     # Provide helpful suggestions based on processor type
                                     if proc_type == "hf_filter":
-                                        LOG.error("Suggestion: Check min_tokens/max_tokens settings. Use --debug to see token counts per example.")
+                                        LOG.error(
+                                            "Suggestion: Check min_tokens/max_tokens settings. Use --debug to see token counts per example."
+                                        )
                                     elif proc_type == "advanced_mapping":
-                                        LOG.error("Suggestion: Check mapping configuration and required fields. Use --debug to see transformation details.")
+                                        LOG.error(
+                                            "Suggestion: Check mapping configuration and required fields. Use --debug to see transformation details."
+                                        )
                                     elif proc_type == "image_count_filter":
-                                        LOG.error("Suggestion: Check min_images/max_images settings and image field names.")
-                                    
-                                    raise ValueError(f"All examples filtered out by {proc_identifier} processor. Check processor configuration and input data.")
+                                        LOG.error(
+                                            "Suggestion: Check min_images/max_images settings and image field names."
+                                        )
+
+                                    raise ValueError(
+                                        f"All examples filtered out by {proc_identifier} processor. Check processor configuration and input data."
+                                    )
                 
                     # Log processor pipeline summary
                     if "processors" in dataset_config:
