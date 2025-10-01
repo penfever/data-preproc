@@ -37,6 +37,13 @@ except ImportError:
     HAS_NUMPY = False
     LOG.warning("Numpy not available")
 
+try:
+    from datasets import Image as HFImage
+    HAS_DATASETS_IMAGE = True
+except ImportError:
+    HAS_DATASETS_IMAGE = False
+    LOG.warning("datasets.Image not available; image features will not be recast")
+
 
 ALLOWED_RESIZE_MODES = {"keep_aspect_ratio", "exact"}
 
@@ -208,6 +215,19 @@ class ImageTransformProcessor(DatasetProcessor):
         
         # Apply transformations
         transformed_dataset = dataset.map(process_function)
+
+        if HAS_DATASETS_IMAGE:
+            for field in self.image_fields:
+                if field in transformed_dataset.column_names:
+                    try:
+                        transformed_dataset = transformed_dataset.cast_column(field, HFImage())
+                    except Exception as cast_error:
+                        LOG.debug(
+                            "Could not cast column '%s' to Image feature: %s",
+                            field,
+                            cast_error,
+                        )
+
         final_count = len(transformed_dataset)
         
         # Log detailed results
