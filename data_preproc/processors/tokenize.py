@@ -35,9 +35,9 @@ class TokenizeProcessor(DatasetProcessor):
         self.skip_if_empty: bool = config.get("skip_if_empty", True)
         self.keep_text_fields: bool = config.get("keep_text_fields", True)
         self.return_token_type_ids: bool = config.get("return_token_type_ids", False)
-        self.input_dtype: str = config.get("input_dtype", "int32")
-        self.attention_dtype: str = config.get("attention_dtype", "int8")
-        self.token_type_dtype: str = config.get("token_type_dtype", "int32")
+        self.input_dtype: str = config.get("input_dtype", "int64")
+        self.attention_dtype: str = config.get("attention_dtype", "int64")
+        self.token_type_dtype: str = config.get("token_type_dtype", "int64")
 
         self.tokenizer = config.get("tokenizer")  # Will be provided by framework
 
@@ -109,7 +109,7 @@ class TokenizeProcessor(DatasetProcessor):
 
         if HAS_DATASETS_SEQUENCE:
             mapped_dataset = self._cast_sequence_columns(mapped_dataset)
-
+        
         return mapped_dataset
 
     def _collect_text_from_example(self, example: Dict[str, Any]) -> str:
@@ -199,6 +199,11 @@ class TokenizeProcessor(DatasetProcessor):
                 dataset = dataset.cast_column(
                     self.output_field, Sequence(Value(self.input_dtype))
                 )
+                LOG.debug(
+                    "Column '%s' cast to Sequence(Value('%s'))",
+                    self.output_field,
+                    self.input_dtype,
+                )
             except Exception as error:
                 LOG.debug(
                     "Could not cast column '%s' to Sequence(Value('%s')): %s",
@@ -215,6 +220,11 @@ class TokenizeProcessor(DatasetProcessor):
                 dataset = dataset.cast_column(
                     self.attention_mask_field, Sequence(Value(self.attention_dtype))
                 )
+                LOG.debug(
+                    "Column '%s' cast to Sequence(Value('%s'))",
+                    self.attention_mask_field,
+                    self.attention_dtype,
+                )
             except Exception as error:
                 LOG.debug(
                     "Could not cast column '%s' to Sequence(Value('%s')): %s",
@@ -230,6 +240,10 @@ class TokenizeProcessor(DatasetProcessor):
             try:
                 dataset = dataset.cast_column(
                     "token_type_ids", Sequence(Value(self.token_type_dtype))
+                )
+                LOG.debug(
+                    "Column 'token_type_ids' cast to Sequence(Value('%s'))",
+                    self.token_type_dtype,
                 )
             except Exception as error:
                 LOG.debug(
