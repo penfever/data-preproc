@@ -33,12 +33,12 @@ class TokenizeProcessor(DatasetProcessor):
                 "Tokenizer not available for TokenizeProcessor. Ensure pipeline loads one before running."
             )
 
-        collected_text = self._collect_text(example)
+        collected_text = self._collect_text_from_example(example)
 
         if not collected_text:
             if self.skip_if_empty:
                 return example
-            return None
+            raise ValueError("No text content available for tokenization")
 
         encoding_kwargs = {
             "add_special_tokens": self.add_special_tokens,
@@ -72,7 +72,32 @@ class TokenizeProcessor(DatasetProcessor):
 
         return example
 
-    def _collect_text(self, example: Dict[str, Any]) -> str:
+    def apply_to_dataset(self, dataset):  # type: ignore[override]
+        """Apply tokenization using dataset.map to preserve dataset features."""
+        if not hasattr(self, "tokenizer") or self.tokenizer is None:
+            raise ValueError(
+                "Tokenizer not available for TokenizeProcessor. Ensure pipeline loads one before running."
+            )
+
+        remove_columns: List[str] = []
+        if not self.keep_text_fields:
+            remove_columns = [
+                field for field in self.text_fields if field in dataset.column_names
+            ]
+
+        def map_fn(example: Dict[str, Any]) -> Dict[str, Any]:
+            processed = self.process_example(example.copy())
+            return processed
+
+        mapped_dataset = dataset.map(
+            map_fn,
+            desc="Tokenizing examples",
+            remove_columns=remove_columns if remove_columns else None,
+        )
+
+        return mapped_dataset
+
+    def _collect_text_from_example(self, example: Dict[str, Any]) -> str:
         parts: List[str] = []
         for field in self.text_fields:
             value = example.get(field)

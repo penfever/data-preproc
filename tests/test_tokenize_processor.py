@@ -48,7 +48,7 @@ def test_tokenize_processor_handles_dataset_map():
     processor = TokenizeProcessor({"text_fields": ["text"], "add_special_tokens": False})
     processor.tokenizer = _StubTokenizer()
 
-    tokenized_dataset = dataset.map(lambda ex: processor.process_example(ex))
+    tokenized_dataset = processor.apply_to_dataset(dataset)
 
     assert tokenized_dataset[0]["input_ids"] == [1, 2, 3]
     assert tokenized_dataset[1]["input_ids"] == [1, 2]
