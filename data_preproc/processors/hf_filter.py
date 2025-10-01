@@ -1,8 +1,14 @@
-"""HuggingFace Datasets filter processor that preserves original structure."""
+"""HuggingFace Datasets filter processor that preserves original structure.
+
+This version removes all tokenizer/tokenized-input logic. Length checks are
+performed on raw text by simple whitespace splitting (word count). The
+processor no longer reads or depends on any tokenized fields (e.g.,
+``input_ids``) and ignores any provided ``tokenizer``/``token_field`` in the
+configuration.
+"""
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
-from data_preproc.utils.tokenization import token_length_from_value
+from typing import Any, Dict, List, Optional
 from collections import Counter
 
 from . import DatasetProcessor, register_processor
@@ -17,17 +23,16 @@ except ImportError:
 
 
 class HFFilterProcessor(DatasetProcessor):
-    """Apply HuggingFace Datasets .filter() method with tokenization for length checks."""
+    """Apply HuggingFace Datasets .filter() with raw-text based checks."""
 
     def __init__(self, config: Dict[str, Any]):
         super().__init__(config)
+        # Interpret min/max token settings as raw-text word count limits
         self.max_tokens = config.get("max_tokens")
         self.min_tokens = config.get("min_tokens")
         self.filter_corrupted_images = config.get("filter_corrupted_images", False)
         self.max_image_size = config.get("max_image_size")
         self.min_image_size = config.get("min_image_size")
-        self.tokenizer = config.get("tokenizer")  # Will be set by the caller
-        self.token_field = config.get("token_field")
         self.force_recompute = config.get("force_recompute", False)
         
 
@@ -54,30 +59,25 @@ class HFFilterProcessor(DatasetProcessor):
             failed = False
             failure_count = 0
             
-            # Check token length if tokenizer is available
-            if self.tokenizer and (self.max_tokens or self.min_tokens):
-                token_count, used_token_field = self._compute_token_count(example)
-                if self.token_field and not used_token_field and token_count is None:
-                    LOG.debug(
-                        "Filtering: token field '%s' missing or empty; falling back to text fields",
-                        self.token_field,
-                    )
-
-                if token_count is None:
+            # Raw-text word-count checks
+            if self.max_tokens or self.min_tokens:
+                text_content = self._extract_text_content(example)
+                if not text_content:
                     LOG.debug("Filtering: no text content found")
                     filter_stats['no_text_content'] += 1
                     failed = True
                     failure_count += 1
                 else:
-                    if self.max_tokens and token_count > self.max_tokens:
-                        LOG.debug(f"Filtering: token count {token_count} > {self.max_tokens}")
-                        filter_stats['token_count_too_high'] += 1
+                    word_count = len(str(text_content).split())
+                    if self.max_tokens and word_count > self.max_tokens:
+                        LOG.debug(f"Filtering: word count {word_count} > {self.max_tokens}")
+                        filter_stats['word_count_too_high'] += 1
                         failed = True
                         failure_count += 1
 
-                    if self.min_tokens and token_count < self.min_tokens:
-                        LOG.debug(f"Filtering: token count {token_count} < {self.min_tokens}")
-                        filter_stats['token_count_too_low'] += 1
+                    if self.min_tokens and word_count < self.min_tokens:
+                        LOG.debug(f"Filtering: word count {word_count} < {self.min_tokens}")
+                        filter_stats['word_count_too_low'] += 1
                         failed = True
                         failure_count += 1
             
@@ -115,13 +115,9 @@ class HFFilterProcessor(DatasetProcessor):
 
         initial_count = len(dataset)
         LOG.info(f"🔍 HF Filter: Processing {initial_count} examples")
-        token_source_info: Any
-        if self.token_field:
-            token_source_info = self.token_field
-        else:
-            token_source_info = ", ".join(self.text_fields) if self.text_fields else "<none>"
-        LOG.info(f"  Token limits: min={self.min_tokens}, max={self.max_tokens}")
-        LOG.info(f"  Token source: {token_source_info}")
+        text_source_info: Any = ", ".join(self.text_fields) if self.text_fields else "<none>"
+        LOG.info(f"  Word limits: min={self.min_tokens}, max={self.max_tokens}")
+        LOG.info(f"  Text source fields: {text_source_info}")
         LOG.info(f"  Force recompute: {self.force_recompute}")
         LOG.info(f"  Image checks: corrupted={self.filter_corrupted_images}, size_limits={bool(self.max_image_size or self.min_image_size)}")
         
@@ -144,13 +140,13 @@ class HFFilterProcessor(DatasetProcessor):
         if final_count == 0 and initial_count > 0:
             reason_counts = filter_stats["reason_counts"]
             reasons: List[str] = []
-            if reason_counts.get("token_count_too_low"):
+            if reason_counts.get("word_count_too_low"):
                 reasons.append(
-                    f"token_count_too_low (<{self.min_tokens}): {reason_counts['token_count_too_low']}"
+                    f"word_count_too_low (<{self.min_tokens}): {reason_counts['word_count_too_low']}"
                 )
-            if reason_counts.get("token_count_too_high"):
+            if reason_counts.get("word_count_too_high"):
                 reasons.append(
-                    f"token_count_too_high (>{self.max_tokens}): {reason_counts['token_count_too_high']}"
+                    f"word_count_too_high (>{self.max_tokens}): {reason_counts['word_count_too_high']}"
                 )
             if reason_counts.get("corrupted_image"):
                 reasons.append(f"corrupted_image: {reason_counts['corrupted_image']}")
@@ -162,7 +158,7 @@ class HFFilterProcessor(DatasetProcessor):
                 f"Current settings: min_tokens={self.min_tokens}, max_tokens={self.max_tokens}"
             )
             LOG.error(
-                "💡 Suggestion: Adjust min_tokens/max_tokens settings based on your dataset's characteristics."
+                "💡 Suggestion: Adjust min_tokens/max_tokens settings (word-count based) to your dataset's text characteristics."
             )
 
         return filtered_dataset
@@ -173,8 +169,8 @@ class HFFilterProcessor(DatasetProcessor):
             "total_processed": 0,
             "passed": 0,
             "filtered": 0,
-            "token_count_too_low": 0,
-            "token_count_too_high": 0,
+            "word_count_too_low": 0,
+            "word_count_too_high": 0,
             "no_text_content": 0,
             "corrupted_image": 0,
             "image_size_invalid": 0,
@@ -183,46 +179,26 @@ class HFFilterProcessor(DatasetProcessor):
             "combo_counts": Counter(),
         }
 
-    def _compute_token_count(self, example: Dict[str, Any]) -> Tuple[Optional[int], bool]:
-        """Return token count using token_field when available, falling back to text fields."""
-        if not self.tokenizer:
-            return None, False
-
-        token_count: Optional[int] = None
-        used_token_field = False
-
-        if self.token_field:
-            token_value = example.get(self.token_field)
-            if token_value is not None:
-                token_count = token_length_from_value(token_value, self.tokenizer)
-                used_token_field = token_count is not None
-
-        if token_count is None:
-            text_content = self._extract_text_content(example)
-            if text_content:
-                tokens = self.tokenizer(text_content, add_special_tokens=False)
-                token_count = len(tokens["input_ids"])
-
-        return token_count, used_token_field
 
     def _collect_failure_reasons(self, example: Dict[str, Any]) -> List[str]:
         """Determine which filter reasons apply to the example."""
         reasons: List[str] = []
 
-        if self.tokenizer and (self.max_tokens or self.min_tokens):
-            token_count, _ = self._compute_token_count(example)
+        if self.max_tokens or self.min_tokens:
+            text_content = self._extract_text_content(example)
 
-            if token_count is None:
+            if not text_content:
                 LOG.debug("Filtering: no text content found")
                 reasons.append("no_text_content")
             else:
-                if self.max_tokens and token_count > self.max_tokens:
-                    LOG.debug("Filtering: token count %s > %s", token_count, self.max_tokens)
-                    reasons.append("token_count_too_high")
+                word_count = len(str(text_content).split())
+                if self.max_tokens and word_count > self.max_tokens:
+                    LOG.debug("Filtering: word count %s > %s", word_count, self.max_tokens)
+                    reasons.append("word_count_too_high")
 
-                if self.min_tokens and token_count < self.min_tokens:
-                    LOG.debug("Filtering: token count %s < %s", token_count, self.min_tokens)
-                    reasons.append("token_count_too_low")
+                if self.min_tokens and word_count < self.min_tokens:
+                    LOG.debug("Filtering: word count %s < %s", word_count, self.min_tokens)
+                    reasons.append("word_count_too_low")
 
         if self.filter_corrupted_images and "image" in example:
             if not self._validate_image(example["image"]):
@@ -283,14 +259,14 @@ class HFFilterProcessor(DatasetProcessor):
             reason_counts.get("no_text_content", 0),
         )
         LOG.info(
-            "  ❌ Token count too low (<%s): %s",
+            "  ❌ Word count too low (<%s): %s",
             self.min_tokens,
-            reason_counts.get("token_count_too_low", 0),
+            reason_counts.get("word_count_too_low", 0),
         )
         LOG.info(
-            "  ❌ Token count too high (>%s): %s",
+            "  ❌ Word count too high (>%s): %s",
             self.max_tokens,
-            reason_counts.get("token_count_too_high", 0),
+            reason_counts.get("word_count_too_high", 0),
         )
         LOG.info(
             "  ❌ Corrupted images: %s",
@@ -338,15 +314,15 @@ class HFFilterProcessor(DatasetProcessor):
         """Return a human-readable label for a reason key."""
         mapping = {
             "no_text_content": "No text content found",
-            "token_count_too_low": f"Token count too low (<{self.min_tokens})",
-            "token_count_too_high": f"Token count too high (>{self.max_tokens})",
+            "word_count_too_low": f"Word count too low (<{self.min_tokens})",
+            "word_count_too_high": f"Word count too high (>{self.max_tokens})",
             "corrupted_image": "Corrupted images",
             "image_size_invalid": "Invalid image size",
         }
         return mapping.get(reason, reason.replace("_", " ").capitalize())
 
     def _extract_text_content(self, example: Dict[str, Any]) -> Optional[str]:
-        """Extract text content from example for tokenization."""
+        """Extract text content from example for raw-text checks."""
         texts = []
 
         for field in self.text_fields:

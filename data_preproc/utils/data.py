@@ -713,7 +713,7 @@ def prepare_dataset(
                                     # Provide helpful suggestions based on processor type
                                     if proc_type == "hf_filter":
                                         LOG.error(
-                                            "Suggestion: Check min_tokens/max_tokens settings. Use --debug to see token counts per example."
+                                            "Suggestion: Check min_tokens/max_tokens settings (word-count based) and ensure text fields are present."
                                         )
                                     elif proc_type == "advanced_mapping":
                                         LOG.error(
