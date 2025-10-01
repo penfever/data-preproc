@@ -826,6 +826,8 @@ def _apply_processor_streaming(dataset, processor, proc_type, error_handler, bat
     filtered_count = 0
     skipped_count = 0
     filter_reasons = {}
+
+    current_features = getattr(dataset, "features", None)
     
     LOG.info(f"Processing {len(dataset)} examples with {proc_type} processor using batched streaming...")
     
@@ -867,6 +869,20 @@ def _apply_processor_streaming(dataset, processor, proc_type, error_handler, bat
             if batch:
                 # Create dataset from batch and add to list
                 batch_ds = Dataset.from_list(batch)
+                if current_features:
+                    for column, feature in current_features.items():
+                        if column in batch_ds.column_names:
+                            try:
+                                batch_ds = batch_ds.cast_column(column, feature)
+                            except Exception as cast_error:
+                                LOG.debug(
+                                    "Could not cast column '%s' to %s: %s",
+                                    column,
+                                    feature,
+                                    cast_error,
+                                )
+
+                current_features = getattr(batch_ds, "features", current_features)
                 processed_batches.append(batch_ds)
                 LOG.debug(f"Processed batch {len(processed_batches)}: {len(batch)} examples")
                 
@@ -879,7 +895,19 @@ def _apply_processor_streaming(dataset, processor, proc_type, error_handler, bat
     if processed_batches:
         LOG.info(f"Combining {len(processed_batches)} batches into final dataset...")
         final_dataset = concatenate_datasets(processed_batches)
-        
+        if current_features:
+            for column, feature in current_features.items():
+                if column in final_dataset.column_names:
+                    try:
+                        final_dataset = final_dataset.cast_column(column, feature)
+                    except Exception as cast_error:
+                        LOG.debug(
+                            "Could not cast column '%s' to %s on final dataset: %s",
+                            column,
+                            feature,
+                            cast_error,
+                        )
+
         # Clean up batch datasets
         for batch_ds in processed_batches:
             del batch_ds
