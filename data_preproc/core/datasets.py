@@ -13,6 +13,7 @@ from data_preproc.utils.data import prepare_dataset
 from data_preproc.utils.dict import DictDefault
 from data_preproc.utils.logging import get_logger
 from data_preproc.utils.tokenization import check_dataset_labels
+from data_preproc.utils.data import _derive_prepared_dataset_base_name
 
 try:
     from data_preproc.utils.hf_upload import (
@@ -138,8 +139,7 @@ def load_datasets(
             split_name = getattr(cli_args, 'dataset_split', 'train') if cli_args else 'train'
             actual_dataset_path = dataset_prepared_path / "_".join([
                 split_name,
-                cfg.tokenizer_config.replace("/", "_"),
-                f"{cfg.sequence_len}",
+                _derive_prepared_dataset_base_name(cfg),
             ])
             
             # Load processing statistics if available
